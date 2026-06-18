@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/n0thing2c/Soigineer/internal/infrastructure/queue"
+	"github.com/n0thing2c/Soigineer/internal/ingestion-gateway/infrastructure/queue"
 	"github.com/n0thing2c/Soigineer/internal/shared/domain"
 )
 
