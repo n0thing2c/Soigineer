@@ -1,0 +1,84 @@
+
+networks:
+  soigineer_net:
+    driver: bridge
+
+volumes:
+  redpanda_data:
+
+services:
+  # ==========================================
+  # 1. REDPANDA BROKER 
+  # ==========================================
+  redpanda-broker:
+    image: docker.io/redpandadata/redpanda:v25.3.15
+    container_name: redpanda-broker
+    networks:
+      - soigineer_net
+    ports:
+      - "${REDPANDA_EXTERNAL_PORT:-19092}:19092" # Port cho máy tính (Host) gọi vào Redpanda
+      - "9644:9644"   # Port quản trị Admin API
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container # Bật chế độ Dev: Tự động bỏ qua các giới hạn phần cứng khắt khe
+      - --memory 1G
+      - --smp 1
+      # ĐỊNH NGHĨA CÁC CỔNG LẮNG NGHE (Lắng nghe ở đâu?)
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      # ĐỊNH NGHĨA ĐỊA CHỈ QUẢNG BÁ (Báo cho Client biết gọi vào đâu?)
+      - --advertise-kafka-addr=internal://redpanda-broker:9092,external://localhost:19092
+
+  # ==========================================
+  # 2. REDPANDA CONSOLE
+  # ==========================================
+  redpanda-console:
+    image: docker.io/redpandadata/console:v2.8.5
+    container_name: redpanda-console
+    networks:
+      - soigineer_net
+    ports:
+      - "8081:8080"
+    environment:
+      KAFKA_BROKERS: "redpanda-broker:9092"
+    depends_on:
+      - redpanda-broker
+
+  # ==========================================
+  # 3.TẠO TOPIC TỰ ĐỘNG 
+  # ==========================================
+  redpanda-init:
+    image: docker.io/redpandadata/redpanda:v25.3.15
+    container_name: redpanda-topic-creator
+    networks:
+      - soigineer_net
+    depends_on:
+      - redpanda-broker
+    # Chờ Redpanda khởi động xong, sau đó dùng CLI (rpk) để tạo topic
+    entrypoint: [ "/bin/sh", "-c" ]
+    command:
+      - |
+        until rpk cluster info --brokers redpanda-broker:9092; do
+          sleep 2
+        done
+        rpk topic create raw-logs --brokers redpanda-broker:9092 --partitions 3 --replicas 1 --topic-config retention.ms=259200000 || true
+
+  # ==========================================
+  # 4. INGESTION GATEWAY
+  # ==========================================
+  ingestion-gateway:
+    build: 
+      context: ./backend
+      dockerfile: internal/ingestion-gateway/Dockerfile
+    container_name: ingestion-gateway
+    networks:
+      - soigineer_net
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    environment:
+      - REDPANDA_BROKERS=redpanda-broker:9092 
+      - GIN_MODE=release
+    depends_on:
+      - redpanda-init
