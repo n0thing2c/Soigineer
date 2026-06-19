@@ -13,7 +13,13 @@ type Config struct {
 	KafkaPort   string `env:"REDPANDA_EXTERNAL_PORT" envDefault:"19092"`
 
 	KafkaBrokers      []string `env:"REDPANDA_BROKERS" envDefault:"localhost:19092"`
-	KafkaRawLogsTopic string `env:"REDPANDA_RAW_LOGS_TOPIC" envDefault:"raw-logs"`
+	KafkaRawLogsTopic string   `env:"REDPANDA_RAW_LOGS_TOPIC" envDefault:"raw-logs"`
+
+	ClickHouseHost     string `env:"CLICKHOUSE_HOST" envDefault:"localhost"`
+	ClickHousePort     string `env:"CLICKHOUSE_PORT" envDefault:"9000"`
+	ClickHouseDatabase string `env:"CLICKHOUSE_DB" envDefault:"logs_db"`
+	ClickHouseUser     string `env:"CLICKHOUSE_USER" envDefault:"admin"`
+	ClickHousePassword string `env:"CLICKHOUSE_PASSWORD" envDefault:"secret123"`
 }
 
 func LoadConfig() *Config {
