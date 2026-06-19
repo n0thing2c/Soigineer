@@ -13,5 +13,5 @@ CREATE TABLE IF NOT EXISTS logs_table (
     Fingerprint        String
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMMDD(Timestamp)
-ORDER BY (ApplicationName, Level, Timestamp)
+ORDER BY (ApplicationName, Level, Timestamp, TraceID)
 TTL toDateTime(Timestamp) + INTERVAL 30 DAY;
