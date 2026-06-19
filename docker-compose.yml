@@ -5,10 +5,11 @@ networks:
 
 volumes:
   redpanda_data:
+  clickhouse_data:
 
 services:
   # ==========================================
-  # 1. REDPANDA BROKER 
+  # REDPANDA BROKER 
   # ==========================================
   redpanda-broker:
     image: docker.io/redpandadata/redpanda:v25.3.15
@@ -30,13 +31,21 @@ services:
       - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
       # ĐỊNH NGHĨA ĐỊA CHỈ QUẢNG BÁ (Báo cho Client biết gọi vào đâu?)
       - --advertise-kafka-addr=internal://redpanda-broker:9092,external://localhost:19092
+    
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "info", "--brokers", "127.0.0.1:9092"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   # ==========================================
-  # 2. REDPANDA CONSOLE
+  # REDPANDA CONSOLE
   # ==========================================
   redpanda-console:
     image: docker.io/redpandadata/console:v2.8.5
     container_name: redpanda-console
+    restart: always
     networks:
       - soigineer_net
     ports:
@@ -44,10 +53,11 @@ services:
     environment:
       KAFKA_BROKERS: "redpanda-broker:9092"
     depends_on:
-      - redpanda-broker
+      redpanda-broker:
+        condition: service_healthy 
 
   # ==========================================
-  # 3.TẠO TOPIC TỰ ĐỘNG 
+  # TẠO TOPIC TỰ ĐỘNG 
   # ==========================================
   redpanda-init:
     image: docker.io/redpandadata/redpanda:v25.3.15
@@ -55,18 +65,16 @@ services:
     networks:
       - soigineer_net
     depends_on:
-      - redpanda-broker
+      redpanda-broker:
+        condition: service_healthy
     # Chờ Redpanda khởi động xong, sau đó dùng CLI (rpk) để tạo topic
     entrypoint: [ "/bin/sh", "-c" ]
     command:
       - |
-        until rpk cluster info --brokers redpanda-broker:9092; do
-          sleep 2
-        done
         rpk topic create raw-logs --brokers redpanda-broker:9092 --partitions 3 --replicas 1 --topic-config retention.ms=259200000 || true
 
   # ==========================================
-  # 4. INGESTION GATEWAY
+  # INGESTION GATEWAY
   # ==========================================
   ingestion-gateway:
     build: 
@@ -81,4 +89,70 @@ services:
       - REDPANDA_BROKERS=redpanda-broker:9092 
       - GIN_MODE=release
     depends_on:
-      - redpanda-init
+      redpanda-init:
+        condition: service_completed_successfully
+
+ # ==========================================
+  # CLICK HOUSE DB
+  # ==========================================
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse
+    restart: unless-stopped
+    networks:
+      - soigineer_net
+
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    
+    environment:
+      CLICKHOUSE_DB: logs_db
+      CLICKHOUSE_USER: admin
+      CLICKHOUSE_PASSWORD: secret123
+
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./backend/deploy/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+ # ==========================================
+  # Processor
+  # ==========================================
+  logs-processor:
+    build: 
+      context: ./backend
+      dockerfile: internal/processing/Dockerfile
+    container_name: logs-processor
+    networks:
+      - soigineer_net
+    environment:
+      REDPANDA_BROKERS: redpanda-broker:9092
+      REDPANDA_RAW_LOGS_TOPIC: raw-logs
+
+      CLICKHOUSE_DB: logs_db
+      CLICKHOUSE_USER: admin
+      CLICKHOUSE_PASSWORD: secret123
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: 9000
+
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
