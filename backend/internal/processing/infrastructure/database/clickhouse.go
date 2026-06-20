@@ -9,11 +9,7 @@ import (
 	"github.com/n0thing2c/Soigineer/internal/shared/config"
 )
 
-type ClickHouseDB struct {
-	Conn clickhouse.Conn
-}
-
-func NewClickHouse(cfg *config.Config) (*ClickHouseDB, error) {
+func NewClickHouse(cfg *config.Config) (clickhouse.Conn, error) {
 	conn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{
 			cfg.ClickHouseHost + ":" + cfg.ClickHousePort,
@@ -23,19 +19,15 @@ func NewClickHouse(cfg *config.Config) (*ClickHouseDB, error) {
 			Username: cfg.ClickHouseUser,
 			Password: cfg.ClickHousePassword,
 		},
-		DialTimeout: 10 * time.Second,
-
-		// CONNECTION POOLING
-		MaxOpenConns:    10,
-		MaxIdleConns:    10,
-		ConnMaxLifetime: time.Hour,
+		DialTimeout:     10 * time.Second,
+		MaxOpenConns:    cfg.ClickHouseMaxOpenConns,
+		MaxIdleConns:    cfg.ClickHouseMaxIdleConns,
+		ConnMaxLifetime: cfg.ClickHouseConnMaxLifetime(),
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize ClickHouse options: %w", err)
 	}
 
-	// FAIL-FAST:
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -43,16 +35,5 @@ func NewClickHouse(cfg *config.Config) (*ClickHouseDB, error) {
 		return nil, fmt.Errorf("failed to ping ClickHouse at startup: %w", err)
 	}
 
-	return &ClickHouseDB{Conn: conn}, nil
-}
-
-func (db *ClickHouseDB) Close() error {
-	if db.Conn != nil {
-		return db.Conn.Close()
-	}
-	return nil
-}
-
-func (db *ClickHouseDB) Ping(ctx context.Context) error {
-	return db.Conn.Ping(ctx)
+	return conn, nil
 }

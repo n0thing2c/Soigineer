@@ -3,17 +3,22 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/n0thing2c/Soigineer/internal/processing/domain"
-	"github.com/n0thing2c/Soigineer/internal/processing/infrastructure/database"
 )
 
 type clickHouseLogRepo struct {
-	db *database.ClickHouseDB
+	conn        clickhouse.Conn
+	saveTimeout time.Duration
 }
 
-func NewClickHouseLogRepo(db *database.ClickHouseDB) *clickHouseLogRepo {
-	return &clickHouseLogRepo{db: db}
+func NewClickHouseLogRepo(conn clickhouse.Conn, saveTimeout time.Duration) *clickHouseLogRepo {
+	return &clickHouseLogRepo{
+		conn:        conn,
+		saveTimeout: saveTimeout,
+	}
 }
 
 func (r *clickHouseLogRepo) Save(ctx context.Context, logs []*domain.LogModel) error {
@@ -21,19 +26,24 @@ func (r *clickHouseLogRepo) Save(ctx context.Context, logs []*domain.LogModel) e
 		return nil
 	}
 
-	// Prepare Batch: Khởi tạo một mẻ lệnh Insert (Lưu ý: Thay thế "your_database.logs_table" bằng tên bảng thực tế)
+	saveCtx := ctx
+	if r.saveTimeout > 0 {
+		var cancel context.CancelFunc
+		saveCtx, cancel = context.WithTimeout(ctx, r.saveTimeout)
+		defer cancel()
+	}
+
 	query := `
         INSERT INTO logs_table (
-            ApplicationName, Level, Message, NormalizedMessage, 
+            ApplicationName, Level, Message, NormalizedMessage,
             Timestamp, ReceivedAt, TraceID, Fingerprint
         )
     `
-	batch, err := r.db.Conn.PrepareBatch(ctx, query)
+	batch, err := r.conn.PrepareBatch(saveCtx, query)
 	if err != nil {
-		return fmt.Errorf("failed to prepare clickhouse batch: %w", err)
+		return fmt.Errorf("failed to prepare clickhouse batch for %d logs: %w", len(logs), err)
 	}
 
-	// Append data: Load the entire slice into the ClickHouse Driver's RAM.
 	for _, l := range logs {
 		err := batch.Append(
 			l.ApplicationName,
@@ -46,13 +56,12 @@ func (r *clickHouseLogRepo) Save(ctx context.Context, logs []*domain.LogModel) e
 			l.Fingerprint,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to append log traceID %s to batch: %w", l.TraceID, err)
+			return fmt.Errorf("failed to append log traceID %s in batch of %d logs: %w", l.TraceID, len(logs), err)
 		}
 	}
 
-	// Send Batch:
 	if err := batch.Send(); err != nil {
-		return fmt.Errorf("failed to send batch to clickhouse: %w", err)
+		return fmt.Errorf("failed to send clickhouse batch of %d logs: %w", len(logs), err)
 	}
 
 	return nil
