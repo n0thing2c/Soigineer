@@ -14,11 +14,11 @@ var (
 )
 
 func NormalizeMessage(msg string) (original, normalized string) {
+	original = msg
+
 	normalized = strings.TrimSpace(msg)
 	normalized = strings.Join(strings.Fields(normalized), " ")
 	normalized = strings.ToLower(normalized)
-
-	original = normalized
 
 	normalized = uuidRegex.ReplaceAllString(normalized, "{uuid}")
 	normalized = emailRegex.ReplaceAllString(normalized, "{email}")
