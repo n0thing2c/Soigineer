@@ -25,10 +25,18 @@ func main() {
 	}
 	defer clickhouseDB.Close()
 
-	LogRepo := repository.NewClickHouseLogRepo(clickhouseDB)
+	LogRepo := repository.NewClickHouseLogRepo(clickhouseDB, cfg.ProcessorSaveTimeout())
 	AlertProducer := producer.NewAlertProducer()
 	logProcessService := service.NewProcessingService(LogRepo, AlertProducer)
-	logConsumer := delivery.NewLogConsumer(cfg.KafkaBrokers, cfg.KafkaRawLogsTopic, "process-raw-log", logProcessService)
+	logConsumer := delivery.NewLogConsumer(delivery.ConsumerConfig{
+		Brokers:       cfg.KafkaBrokers,
+		Topic:         cfg.KafkaRawLogsTopic,
+		GroupID:       cfg.ProcessorConsumerGroup,
+		MaxBatchRows:  cfg.ProcessorBatchRows,
+		MaxBatchBytes: cfg.ProcessorBatchBytes,
+		FlushInterval: cfg.ProcessorFlushInterval(),
+		MessageBuffer: cfg.ProcessorMessageBuffer,
+	}, logProcessService)
 	defer logConsumer.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -45,7 +53,6 @@ func main() {
 	sig := <-sigChan
 	log.Printf("\n[INFO] Received OS signal: %v. Initiating graceful shutdown...\n", sig)
 
-	// trigger cancel context -> consumer receive <-ctx.Done() then flush
 	cancel()
 
 	time.Sleep(5 * time.Second)
