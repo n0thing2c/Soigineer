@@ -13,12 +13,12 @@ type redpandaLogProducer struct {
 	writer *kafka.Writer
 }
 
-func NewRedpandaLogProducer(brokers []string) *redpandaLogProducer {
+func NewRedpandaLogProducer(brokers []string, batchSize int, batchTimeout time.Duration) *redpandaLogProducer {
 	writer := &kafka.Writer{
 		Addr:         kafka.TCP(brokers...),
 		Balancer:     &kafka.LeastBytes{},
-		BatchSize:    1000,
-		BatchTimeout: 100 * time.Millisecond,
+		BatchSize:    batchSize,
+		BatchTimeout: batchTimeout,
 	}
 
 	return &redpandaLogProducer{writer: writer}

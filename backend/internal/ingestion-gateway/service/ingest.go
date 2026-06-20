@@ -5,17 +5,21 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/n0thing2c/Soigineer/internal/ingestion-gateway/infrastructure/queue"
 	"github.com/n0thing2c/Soigineer/internal/shared/domain"
 )
 
+type LogProducer interface {
+	ProduceLog(ctx context.Context, topic string, key string, event domain.RawLogEvent) error
+	ProduceBatchLog(ctx context.Context, topic string, events []domain.RawLogEvent) error
+}
+
 type Ingestion struct {
-	producer        queue.Producer
+	producer        LogProducer
 	topic           string
 	producerTimeout time.Duration
 }
 
-func NewIngestionService(p queue.Producer, t string, timeout time.Duration) *Ingestion {
+func NewIngestionService(p LogProducer, t string, timeout time.Duration) *Ingestion {
 	return &Ingestion{
 		producer:        p,
 		topic:           t,

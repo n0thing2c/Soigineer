@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/n0thing2c/Soigineer/internal/ingestion-gateway/infrastructure/queue"
@@ -16,16 +15,22 @@ func main() {
 
 	cfg := config.LoadConfig()
 
-	producer := queue.NewRedpandaLogProducer(cfg.KafkaBrokers)
+	producer := queue.NewRedpandaLogProducer(
+		cfg.KafkaBrokers,
+		cfg.KafkaWriterBatchSize,
+		cfg.KafkaWriterBatchTimeout(),
+	)
 	defer producer.Close()
 
-	// Tiêm mockProducer vào Service như bình thường
-	ingestionService := service.NewIngestionService(producer, "raw-logs", 3*time.Second)
+	ingestionService := service.NewIngestionService(
+		producer,
+		cfg.KafkaRawLogsTopic,
+		cfg.IngestionProducerTimeout(),
+	)
 	logHandler := delivery.NewLogHandler(ingestionService)
 
 	engine := gin.Default()
 
-	//middleware limit stream size -> max 2MB
 	engine.Use(func(c *gin.Context) {
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<20)
 		c.Next()
@@ -34,8 +39,9 @@ func main() {
 	v1 := engine.Group("/v1")
 	delivery.RegisterRoutes(v1, logHandler)
 
-	log.Println("Ingestion Gateway is running at http://localhost:8080")
-	if err := engine.Run(":8080"); err != nil {
+	address := ":" + cfg.GatewayPort
+	log.Printf("Ingestion Gateway is running at http://localhost%s", address)
+	if err := engine.Run(address); err != nil {
 		log.Fatalf("Fail to start server: %v", err)
 	}
 }
