@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -29,13 +30,22 @@ func NewProcessingService(r LogRepository, p AlertProducer) *ProcessingService {
 	}
 }
 
-func CreateLogModel(event sharedDomain.RawLogEvent) *domain.LogModel {
+func CreateLogModel(event sharedDomain.RawLogEvent) (*domain.LogModel, error) {
 	appName := event.Payload.ApplicationName
 	level := event.Payload.Level
 	msg, normalizedMsg := NormalizeMessage(event.Payload.Message)
-	timestamp, _ := time.Parse(time.RFC3339, event.Payload.Timestamp)
-	receivedAt, _ := time.Parse(time.RFC3339, event.ReceivedAt)
-	traceId := event.Payload.TraceID
+
+	timestamp, err := time.Parse(time.RFC3339Nano, event.Payload.Timestamp)
+	if err != nil {
+		return nil, fmt.Errorf("invalid event timestamp: %w", err)
+	}
+
+	receivedAt, err := time.Parse(time.RFC3339Nano, event.ReceivedAt)
+	if err != nil {
+		return nil, fmt.Errorf("invalid receivedAt timestamp: %w", err)
+	}
+
+	traceID := event.Payload.TraceID
 	category := Classify(normalizedMsg)
 
 	model := domain.LogModel{
@@ -45,10 +55,10 @@ func CreateLogModel(event sharedDomain.RawLogEvent) *domain.LogModel {
 		NormalizedMessage: normalizedMsg,
 		Timestamp:         timestamp,
 		ReceivedAt:        receivedAt,
-		TraceID:           traceId,
+		TraceID:           traceID,
 		Fingerprint:       GenerateFingerprint(appName, level, string(category), normalizedMsg),
 	}
-	return &model
+	return &model, nil
 }
 
 func (p *ProcessingService) ProcessLog(ctx context.Context, events []sharedDomain.RawLogEvent) error {
@@ -60,16 +70,30 @@ func (p *ProcessingService) ProcessLog(ctx context.Context, events []sharedDomai
 
 	for _, event := range events {
 		level := event.Payload.Level
-
-		// 1. Fast-Path: Priority alert flow
 		if level == "ERROR" || level == "CRITICAL" {
 			alertEvent := sharedDomain.ToAlertEvent(event)
 			if err := p.Producer.ProduceAlert(ctx, alertEvent); err != nil {
 				log.Printf("[WARNING] Failed to produce alert for TraceID %s: %v\n", event.Payload.TraceID, err)
 			}
 		}
-		model := CreateLogModel(event)
+
+		model, err := CreateLogModel(event)
+		if err != nil {
+			log.Printf(
+				"[WARNING] Skipping invalid log event. event_id=%s trace_id=%s err=%v",
+				event.EventID,
+				event.Payload.TraceID,
+				err,
+			)
+			continue
+		}
 		models = append(models, model)
 	}
+
+	if len(models) == 0 {
+		log.Printf("[WARNING] No valid log records to persist after processing batch of %d events", len(events))
+		return nil
+	}
+
 	return p.Repo.Save(ctx, models)
 }

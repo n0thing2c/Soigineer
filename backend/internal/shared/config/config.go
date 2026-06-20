@@ -26,6 +26,7 @@ type Config struct {
 	ProcessorFlushIntervalMS int    `env:"PROCESSOR_FLUSH_INTERVAL_MS" envDefault:"500"`
 	ProcessorMessageBuffer   int    `env:"PROCESSOR_MESSAGE_BUFFER" envDefault:"2000"`
 	ProcessorSaveTimeoutMS   int    `env:"PROCESSOR_SAVE_TIMEOUT_MS" envDefault:"5000"`
+	ProcessorShutdownMS      int    `env:"PROCESSOR_SHUTDOWN_TIMEOUT_MS" envDefault:"5000"`
 
 	ClickHouseHost                   string `env:"CLICKHOUSE_HOST" envDefault:"localhost"`
 	ClickHousePort                   string `env:"CLICKHOUSE_PORT" envDefault:"9000"`
@@ -61,6 +62,10 @@ func (c *Config) ProcessorFlushInterval() time.Duration {
 
 func (c *Config) ProcessorSaveTimeout() time.Duration {
 	return time.Duration(c.ProcessorSaveTimeoutMS) * time.Millisecond
+}
+
+func (c *Config) ProcessorShutdownTimeout() time.Duration {
+	return time.Duration(c.ProcessorShutdownMS) * time.Millisecond
 }
 
 func (c *Config) ClickHouseConnMaxLifetime() time.Duration {

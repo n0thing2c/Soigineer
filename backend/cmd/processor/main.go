@@ -5,8 +5,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
-	"time"
 
 	"github.com/n0thing2c/Soigineer/internal/processing/delivery"
 	"github.com/n0thing2c/Soigineer/internal/processing/infrastructure/database"
@@ -29,13 +29,14 @@ func main() {
 	AlertProducer := producer.NewAlertProducer()
 	logProcessService := service.NewProcessingService(LogRepo, AlertProducer)
 	logConsumer := delivery.NewLogConsumer(delivery.ConsumerConfig{
-		Brokers:       cfg.KafkaBrokers,
-		Topic:         cfg.KafkaRawLogsTopic,
-		GroupID:       cfg.ProcessorConsumerGroup,
-		MaxBatchRows:  cfg.ProcessorBatchRows,
-		MaxBatchBytes: cfg.ProcessorBatchBytes,
-		FlushInterval: cfg.ProcessorFlushInterval(),
-		MessageBuffer: cfg.ProcessorMessageBuffer,
+		Brokers:         cfg.KafkaBrokers,
+		Topic:           cfg.KafkaRawLogsTopic,
+		GroupID:         cfg.ProcessorConsumerGroup,
+		MaxBatchRows:    cfg.ProcessorBatchRows,
+		MaxBatchBytes:   cfg.ProcessorBatchBytes,
+		FlushInterval:   cfg.ProcessorFlushInterval(),
+		MessageBuffer:   cfg.ProcessorMessageBuffer,
+		ShutdownTimeout: cfg.ProcessorShutdownTimeout(),
 	}, logProcessService)
 	defer logConsumer.Close()
 
@@ -45,7 +46,11 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
+	var wg sync.WaitGroup
+	wg.Add(1)
+
 	go func() {
+		defer wg.Done()
 		log.Println("[INFO] Starting Log Consumer Processor...")
 		logConsumer.Start(ctx)
 	}()
@@ -54,7 +59,6 @@ func main() {
 	log.Printf("\n[INFO] Received OS signal: %v. Initiating graceful shutdown...\n", sig)
 
 	cancel()
-
-	time.Sleep(5 * time.Second)
+	wg.Wait()
 	log.Println("[INFO] Shutdown complete. Goodbye!")
 }

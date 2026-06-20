@@ -15,22 +15,24 @@ type LogProcessor interface {
 }
 
 type ConsumerConfig struct {
-	Brokers       []string
-	Topic         string
-	GroupID       string
-	MaxBatchRows  int
-	MaxBatchBytes int
-	FlushInterval time.Duration
-	MessageBuffer int
+	Brokers         []string
+	Topic           string
+	GroupID         string
+	MaxBatchRows    int
+	MaxBatchBytes   int
+	FlushInterval   time.Duration
+	MessageBuffer   int
+	ShutdownTimeout time.Duration
 }
 
 type LogConsumer struct {
-	reader        *kafka.Reader
-	processor     LogProcessor
-	maxBatchRows  int
-	maxBatchBytes int
-	flushInterval time.Duration
-	messageBuffer int
+	reader          *kafka.Reader
+	processor       LogProcessor
+	maxBatchRows    int
+	maxBatchBytes   int
+	flushInterval   time.Duration
+	messageBuffer   int
+	shutdownTimeout time.Duration
 }
 
 func NewLogConsumer(cfg ConsumerConfig, processor LogProcessor) *LogConsumer {
@@ -61,13 +63,19 @@ func NewLogConsumer(cfg ConsumerConfig, processor LogProcessor) *LogConsumer {
 		messageBuffer = maxBatchRows * 2
 	}
 
+	shutdownTimeout := cfg.ShutdownTimeout
+	if shutdownTimeout <= 0 {
+		shutdownTimeout = 5 * time.Second
+	}
+
 	return &LogConsumer{
-		reader:        reader,
-		processor:     processor,
-		maxBatchRows:  maxBatchRows,
-		maxBatchBytes: maxBatchBytes,
-		flushInterval: flushInterval,
-		messageBuffer: messageBuffer,
+		reader:          reader,
+		processor:       processor,
+		maxBatchRows:    maxBatchRows,
+		maxBatchBytes:   maxBatchBytes,
+		flushInterval:   flushInterval,
+		messageBuffer:   messageBuffer,
+		shutdownTimeout: shutdownTimeout,
 	}
 }
 
@@ -82,11 +90,12 @@ func (c *LogConsumer) Start(ctx context.Context) {
 	batchEvents := make([]sharedDomain.RawLogEvent, 0, c.maxBatchRows)
 	batchMsgs := make([]kafka.Message, 0, c.maxBatchRows)
 	currentBatchBytes := 0
+	shuttingDown := false
 
 	ticker := time.NewTicker(c.flushInterval)
 	defer ticker.Stop()
 
-	flush := func(reason string) {
+	flush := func(flushCtx context.Context, reason string) {
 		if len(batchEvents) == 0 {
 			return
 		}
@@ -94,7 +103,7 @@ func (c *LogConsumer) Start(ctx context.Context) {
 		batchSize := len(batchEvents)
 		batchMB := float64(currentBatchBytes) / (1024 * 1024)
 
-		if err := c.processor.ProcessLog(ctx, batchEvents); err != nil {
+		if err := c.processor.ProcessLog(flushCtx, batchEvents); err != nil {
 			log.Printf(
 				"[ERROR] Batch processing failed: reason=%s rows=%d bytes=%d err=%v",
 				reason,
@@ -105,7 +114,7 @@ func (c *LogConsumer) Start(ctx context.Context) {
 			return
 		}
 
-		if err := c.reader.CommitMessages(ctx, batchMsgs...); err != nil {
+		if err := c.reader.CommitMessages(flushCtx, batchMsgs...); err != nil {
 			log.Printf(
 				"[ERROR] Failed to commit offsets: reason=%s rows=%d bytes=%d err=%v",
 				reason,
@@ -122,16 +131,23 @@ func (c *LogConsumer) Start(ctx context.Context) {
 		currentBatchBytes = 0
 	}
 
+	shutdownFlush := func(reason string) {
+		flushCtx, cancel := context.WithTimeout(context.Background(), c.shutdownTimeout)
+		defer cancel()
+		flush(flushCtx, reason)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("Shutting down... Flushing remaining logs...")
-			flush("shutdown")
-			return
+			if !shuttingDown {
+				log.Println("Shutdown signal received. Draining consumer before final flush...")
+				shuttingDown = true
+			}
 
 		case msg, ok := <-msgChan:
 			if !ok {
-				flush("reader_closed")
+				shutdownFlush("shutdown")
 				return
 			}
 
@@ -143,7 +159,7 @@ func (c *LogConsumer) Start(ctx context.Context) {
 					msg.Offset,
 					err,
 				)
-				if err := c.reader.CommitMessages(ctx, msg); err != nil {
+				if err := c.reader.CommitMessages(context.Background(), msg); err != nil {
 					log.Printf(
 						"[ERROR] Failed to commit invalid payload. partition=%d offset=%d err=%v",
 						msg.Partition,
@@ -159,12 +175,15 @@ func (c *LogConsumer) Start(ctx context.Context) {
 			currentBatchBytes += len(msg.Value)
 
 			if len(batchEvents) >= c.maxBatchRows || currentBatchBytes >= c.maxBatchBytes {
-				flush("limit")
+				flush(ctx, "limit")
 				ticker.Reset(c.flushInterval)
 			}
 
 		case <-ticker.C:
-			flush("interval")
+			if shuttingDown {
+				continue
+			}
+			flush(ctx, "interval")
 		}
 	}
 }
