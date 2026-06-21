@@ -25,8 +25,8 @@ services:
       - redpanda
       - start
       - --mode=dev-container # Bật chế độ Dev: Tự động bỏ qua các giới hạn phần cứng khắt khe
-      - --memory 1G
-      - --smp 1
+      - --memory 2G
+      - --smp 2
       # ĐỊNH NGHĨA CÁC CỔNG LẮNG NGHE (Lắng nghe ở đâu?)
       - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
       # ĐỊNH NGHĨA ĐỊA CHỈ QUẢNG BÁ (Báo cho Client biết gọi vào đâu?)
@@ -71,7 +71,7 @@ services:
     entrypoint: [ "/bin/sh", "-c" ]
     command:
       - |
-        rpk topic create raw-logs --brokers redpanda-broker:9092 --partitions 3 --replicas 1 --topic-config retention.ms=259200000 || true
+        rpk topic create raw-logs --brokers redpanda-broker:9092 --partitions 6 --replicas 1 --topic-config retention.ms=259200000 || true
 
   # ==========================================
   # INGESTION GATEWAY
@@ -89,9 +89,9 @@ services:
       GATEWAY_PORT: "${GATEWAY_PORT:-8080}"
       REDPANDA_BROKERS: redpanda-broker:9092
       REDPANDA_RAW_LOGS_TOPIC: "${REDPANDA_RAW_LOGS_TOPIC:-raw-logs}"
-      REDPANDA_WRITER_BATCH_SIZE: "${REDPANDA_WRITER_BATCH_SIZE:-1000}"
-      REDPANDA_WRITER_BATCH_TIMEOUT_MS: "${REDPANDA_WRITER_BATCH_TIMEOUT_MS:-100}"
-      INGESTION_PRODUCER_TIMEOUT_MS: "${INGESTION_PRODUCER_TIMEOUT_MS:-3000}"
+      REDPANDA_WRITER_BATCH_SIZE: "${REDPANDA_WRITER_BATCH_SIZE:-5000}"
+      REDPANDA_WRITER_BATCH_TIMEOUT_MS: "${REDPANDA_WRITER_BATCH_TIMEOUT_MS:-30}"
+      INGESTION_PRODUCER_TIMEOUT_MS: "${INGESTION_PRODUCER_TIMEOUT_MS:-10000}"
       GIN_MODE: "${GIN_MODE:-release}"
     depends_on:
       redpanda-init:
@@ -127,7 +127,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 3G
 
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
@@ -143,19 +143,19 @@ services:
     build: 
       context: ./backend
       dockerfile: internal/processing/Dockerfile
-    container_name: logs-processor
+    #container_name: logs-processor
     networks:
       - soigineer_net
     environment:
       REDPANDA_BROKERS: "redpanda-broker:9092"
       REDPANDA_RAW_LOGS_TOPIC: "${REDPANDA_RAW_LOGS_TOPIC:-raw-logs}"
       PROCESSOR_CONSUMER_GROUP: "${PROCESSOR_CONSUMER_GROUP:-process-raw-log}"
-      PROCESSOR_BATCH_ROWS: "${PROCESSOR_BATCH_ROWS:-1000}"
-      PROCESSOR_BATCH_BYTES: "${PROCESSOR_BATCH_BYTES:-4194304}"
-      PROCESSOR_FLUSH_INTERVAL_MS: "${PROCESSOR_FLUSH_INTERVAL_MS:-500}"
-      PROCESSOR_MESSAGE_BUFFER: "${PROCESSOR_MESSAGE_BUFFER:-2000}"
-      PROCESSOR_SAVE_TIMEOUT_MS: "${PROCESSOR_SAVE_TIMEOUT_MS:-5000}"
-      PROCESSOR_SHUTDOWN_TIMEOUT_MS: "${PROCESSOR_SHUTDOWN_TIMEOUT_MS:-5000}"
+      PROCESSOR_BATCH_ROWS: "${PROCESSOR_BATCH_ROWS:-8000}"
+      PROCESSOR_BATCH_BYTES: "${PROCESSOR_BATCH_BYTES:-25165824}"
+      PROCESSOR_FLUSH_INTERVAL_MS: "${PROCESSOR_FLUSH_INTERVAL_MS:-1000}"
+      PROCESSOR_MESSAGE_BUFFER: "${PROCESSOR_MESSAGE_BUFFER:-30000}"
+      PROCESSOR_SAVE_TIMEOUT_MS: "${PROCESSOR_SAVE_TIMEOUT_MS:-20000}"
+      PROCESSOR_SHUTDOWN_TIMEOUT_MS: "${PROCESSOR_SHUTDOWN_TIMEOUT_MS:-30000}"
 
       CLICKHOUSE_DB: "${CLICKHOUSE_DB:-logs_db}"
       CLICKHOUSE_USER: "${CLICKHOUSE_USER:-admin}"
