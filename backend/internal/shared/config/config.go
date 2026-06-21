@@ -4,7 +4,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/caarlos0/env" 
+	"github.com/caarlos0/env"
 	"github.com/joho/godotenv"
 )
 

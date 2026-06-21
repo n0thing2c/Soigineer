@@ -7,5 +7,3 @@ type LogRecord struct {
 	Timestamp       string `json:"timestamp"`
 	TraceID         string `json:"traceId"`
 }
-
-

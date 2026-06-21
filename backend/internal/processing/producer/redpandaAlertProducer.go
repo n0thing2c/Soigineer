@@ -13,6 +13,6 @@ func NewAlertProducer() *RedpandaAlertProducer {
 	return &RedpandaAlertProducer{}
 }
 
-func(p *RedpandaAlertProducer) ProduceAlert(ctx context.Context, log sharedDomain.AlertEvent) error {
+func (p *RedpandaAlertProducer) ProduceAlert(ctx context.Context, log sharedDomain.AlertEvent) error {
 	return nil
 }

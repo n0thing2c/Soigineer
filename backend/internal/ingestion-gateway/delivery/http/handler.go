@@ -11,18 +11,18 @@ import (
 	"github.com/n0thing2c/Soigineer/internal/shared/domain"
 )
 
-	type LogHandler struct {
-		ingestor LogIngestor
-	}
+type LogHandler struct {
+	ingestor LogIngestor
+}
 
-	type LogIngestor interface {
-		IngestSingleLog(ctx context.Context, log domain.LogRecord) error
-		IngestBatchLog(ctx context.Context, logs []domain.LogRecord) error
-	}
+type LogIngestor interface {
+	IngestSingleLog(ctx context.Context, log domain.LogRecord) error
+	IngestBatchLog(ctx context.Context, logs []domain.LogRecord) error
+}
 
-	func NewLogHandler(i LogIngestor) *LogHandler {
-		return &LogHandler{ingestor: i}
-	}
+func NewLogHandler(i LogIngestor) *LogHandler {
+	return &LogHandler{ingestor: i}
+}
 
 func (h *LogHandler) SingleLogHandle(ctx *gin.Context) {
 	var req LogRequest

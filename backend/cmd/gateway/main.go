@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/n0thing2c/Soigineer/internal/ingestion-gateway/infrastructure/queue"
 	delivery "github.com/n0thing2c/Soigineer/internal/ingestion-gateway/delivery/http"
+	"github.com/n0thing2c/Soigineer/internal/ingestion-gateway/infrastructure/queue"
 	"github.com/n0thing2c/Soigineer/internal/ingestion-gateway/service"
 	"github.com/n0thing2c/Soigineer/internal/shared/config"
 )

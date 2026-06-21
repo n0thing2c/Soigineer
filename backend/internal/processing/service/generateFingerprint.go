@@ -10,4 +10,3 @@ func GenerateFingerprint(appName string, level string, category string, normaliz
 	fingerprint := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(fingerprint[:])
 }
-
