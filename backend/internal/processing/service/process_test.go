@@ -55,7 +55,7 @@ func TestCreateLogModelSuccess(t *testing.T) {
 		t.Fatalf("CreateLogModel() error = %v", err)
 	}
 
-	if model.ApplicationName != "app-001" || model.Level != "ERROR" || model.TraceID != "trace-1" {
+	if model.EventID != "event-1" || model.ApplicationName != "app-001" || model.Level != "ERROR" || model.TraceID != "trace-1" {
 		t.Fatalf("model identity fields = %+v", model)
 	}
 	if model.Message != event.Payload.Message {

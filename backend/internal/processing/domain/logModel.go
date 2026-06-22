@@ -3,6 +3,7 @@ package domain
 import "time"
 
 type LogModel struct {
+	EventID           string
 	ApplicationName   string
 	Level             string
 	Message           string

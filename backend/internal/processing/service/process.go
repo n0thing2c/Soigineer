@@ -49,6 +49,7 @@ func CreateLogModel(event sharedDomain.RawLogEvent) (*domain.LogModel, error) {
 	category := Classify(normalizedMsg)
 
 	model := domain.LogModel{
+		EventID:           event.EventID,
 		ApplicationName:   appName,
 		Level:             level,
 		Message:           msg,
