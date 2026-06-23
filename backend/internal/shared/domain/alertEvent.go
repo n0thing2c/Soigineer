@@ -1,8 +1,13 @@
 package domain
 
-type AlertEvent struct {
-}
+import "time"
 
-func ToAlertEvent(event RawLogEvent) AlertEvent {
-	return AlertEvent{}
+type AlertEvent struct {
+	EventID         string `json:"eventId"`
+	ApplicationName string `json:"applicationName"`
+	Level           string `json:"level"`
+	Message         string `json:"message"`
+	Fingerprint     string `json:"fingerprint"`
+	TraceID         string `json:"traceId"`
+	Timestamp       time.Time `json:"timestamp"`
 }

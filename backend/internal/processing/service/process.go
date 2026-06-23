@@ -62,6 +62,18 @@ func CreateLogModel(event sharedDomain.RawLogEvent) (*domain.LogModel, error) {
 	return &model, nil
 }
 
+func CreateAlertEvent(model *domain.LogModel) sharedDomain.AlertEvent {
+	return sharedDomain.AlertEvent{
+		EventID:         model.EventID,
+		ApplicationName: model.ApplicationName,
+		Level:           model.Level,
+		Message:         model.Message,
+		TraceID:         model.TraceID,
+		Fingerprint:     model.Fingerprint,
+		Timestamp:       model.Timestamp,
+	}
+}
+
 func (p *ProcessingService) ProcessLog(ctx context.Context, events []sharedDomain.RawLogEvent) error {
 	if len(events) == 0 {
 		return nil
@@ -70,14 +82,6 @@ func (p *ProcessingService) ProcessLog(ctx context.Context, events []sharedDomai
 	models := make([]*domain.LogModel, 0, len(events))
 
 	for _, event := range events {
-		level := event.Payload.Level
-		if level == "ERROR" || level == "CRITICAL" {
-			alertEvent := sharedDomain.ToAlertEvent(event)
-			if err := p.Producer.ProduceAlert(ctx, alertEvent); err != nil {
-				log.Printf("[WARNING] Failed to produce alert for TraceID %s: %v\n", event.Payload.TraceID, err)
-			}
-		}
-
 		model, err := CreateLogModel(event)
 		if err != nil {
 			log.Printf(
@@ -87,6 +91,12 @@ func (p *ProcessingService) ProcessLog(ctx context.Context, events []sharedDomai
 				err,
 			)
 			continue
+		}
+		if model.Level == "ERROR" || model.Level == "CRITICAL" {
+			alertEvent := CreateAlertEvent(model)
+			if err := p.Producer.ProduceAlert(ctx, alertEvent); err != nil {
+				log.Printf("[WARNING] Failed to produce alert for EventID %s: %v\n", event.EventID, err)
+			}
 		}
 		models = append(models, model)
 	}
