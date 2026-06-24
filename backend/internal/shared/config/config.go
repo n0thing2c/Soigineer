@@ -38,6 +38,14 @@ type Config struct {
 	ClickHouseMaxOpenConns           int    `env:"CLICKHOUSE_MAX_OPEN_CONNS" envDefault:"10"`
 	ClickHouseMaxIdleConns           int    `env:"CLICKHOUSE_MAX_IDLE_CONNS" envDefault:"10"`
 	ClickHouseConnMaxLifetimeMinutes int    `env:"CLICKHOUSE_CONN_MAX_LIFETIME_MINUTES" envDefault:"60"`
+
+	TelegramBotToken  string `env:"TELEGRAM_BOT_TOKEN"`
+	TelegramChatID    string `env:"TELEGRAM_CHAT_ID"`
+	TelegramTimeoutMS int    `env:"TELEGRAM_TIMEOUT_MS" envDefault:"5000"`
+
+	AlertConsumerGroup string `env:"ALERT_CONSUMER_GROUP" envDefault:"alert-dispatcher"`
+	RedisAddress       string `env:"REDIS_ADDRESS" envDefault:"localhost:6379"`
+	AlertDedupPeriod   int    `env:"ALERT_DEDUP_PERIOD" envDefault:"60"`
 }
 
 func LoadConfig() *Config {
@@ -76,4 +84,8 @@ func (c *Config) ProcessorShutdownTimeout() time.Duration {
 
 func (c *Config) ClickHouseConnMaxLifetime() time.Duration {
 	return time.Duration(c.ClickHouseConnMaxLifetimeMinutes) * time.Minute
+}
+
+func (c *Config) TelegramTimeout() time.Duration {
+	return time.Duration(c.TelegramTimeoutMS) * time.Millisecond
 }
