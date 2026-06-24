@@ -10,7 +10,7 @@ import (
 
 	"github.com/n0thing2c/Soigineer/internal/processing/delivery"
 	"github.com/n0thing2c/Soigineer/internal/processing/infrastructure/database"
-	"github.com/n0thing2c/Soigineer/internal/processing/producer"
+	"github.com/n0thing2c/Soigineer/internal/processing/infrastructure/queue"
 	"github.com/n0thing2c/Soigineer/internal/processing/repository"
 	"github.com/n0thing2c/Soigineer/internal/processing/service"
 	"github.com/n0thing2c/Soigineer/internal/shared/config"
@@ -26,7 +26,8 @@ func main() {
 	defer clickhouseDB.Close()
 
 	LogRepo := repository.NewClickHouseLogRepo(clickhouseDB, cfg.ProcessorSaveTimeout())
-	AlertProducer := producer.NewAlertProducer()
+	AlertProducer := queue.NewAlertProducer(cfg.KafkaBrokers, cfg.KafkaAlertTopic, cfg.AlertProducerTimeout())
+	defer AlertProducer.Close()
 	logProcessService := service.NewProcessingService(LogRepo, AlertProducer)
 	logConsumer := delivery.NewLogConsumer(delivery.ConsumerConfig{
 		Brokers:         cfg.KafkaBrokers,

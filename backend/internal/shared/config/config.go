@@ -15,8 +15,10 @@ type Config struct {
 
 	KafkaBrokers              []string `env:"REDPANDA_BROKERS" envDefault:"localhost:19092"`
 	KafkaRawLogsTopic         string   `env:"REDPANDA_RAW_LOGS_TOPIC" envDefault:"raw-logs"`
+	KafkaAlertTopic           string   `env:"REDPANDA_ALERT_TOPIC" envDefault:"alert"`
 	KafkaWriterBatchSize      int      `env:"REDPANDA_WRITER_BATCH_SIZE" envDefault:"1000"`
 	KafkaWriterBatchTimeoutMS int      `env:"REDPANDA_WRITER_BATCH_TIMEOUT_MS" envDefault:"100"`
+	AlertProducerTimeoutMS    int      `env:"PROCESSOR_ALERT_PRODUCER_TIMEOUT_MS" envDefault:"3000"`
 
 	IngestionProducerTimeoutMS int `env:"INGESTION_PRODUCER_TIMEOUT_MS" envDefault:"3000"`
 
@@ -54,6 +56,10 @@ func (c *Config) KafkaWriterBatchTimeout() time.Duration {
 
 func (c *Config) IngestionProducerTimeout() time.Duration {
 	return time.Duration(c.IngestionProducerTimeoutMS) * time.Millisecond
+}
+
+func (c *Config) AlertProducerTimeout() time.Duration {
+	return time.Duration(c.AlertProducerTimeoutMS) * time.Millisecond
 }
 
 func (c *Config) ProcessorFlushInterval() time.Duration {

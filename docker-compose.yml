@@ -1,4 +1,3 @@
-
 networks:
   soigineer_net:
     driver: bridge
@@ -9,7 +8,7 @@ volumes:
 
 services:
   # ==========================================
-  # REDPANDA BROKER 
+  # REDPANDA BROKER
   # ==========================================
   redpanda-broker:
     image: docker.io/redpandadata/redpanda:v25.3.15
@@ -18,7 +17,7 @@ services:
       - soigineer_net
     ports:
       - "${REDPANDA_EXTERNAL_PORT:-19092}:19092" # Port cho máy tính (Host) gọi vào Redpanda
-      - "9644:9644"   # Port quản trị Admin API
+      - "9644:9644" # Port quản trị Admin API
     volumes:
       - redpanda_data:/var/lib/redpanda/data
     command:
@@ -31,7 +30,7 @@ services:
       - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
       # ĐỊNH NGHĨA ĐỊA CHỈ QUẢNG BÁ (Báo cho Client biết gọi vào đâu?)
       - --advertise-kafka-addr=internal://redpanda-broker:9092,external://localhost:19092
-    
+
     healthcheck:
       test: ["CMD", "rpk", "cluster", "info", "--brokers", "127.0.0.1:9092"]
       interval: 5s
@@ -54,10 +53,10 @@ services:
       KAFKA_BROKERS: "redpanda-broker:9092"
     depends_on:
       redpanda-broker:
-        condition: service_healthy 
+        condition: service_healthy
 
   # ==========================================
-  # TẠO TOPIC TỰ ĐỘNG 
+  # TẠO TOPIC TỰ ĐỘNG
   # ==========================================
   redpanda-init:
     image: docker.io/redpandadata/redpanda:v25.3.15
@@ -68,16 +67,17 @@ services:
       redpanda-broker:
         condition: service_healthy
     # Chờ Redpanda khởi động xong, sau đó dùng CLI (rpk) để tạo topic
-    entrypoint: [ "/bin/sh", "-c" ]
+    entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         rpk topic create raw-logs --brokers redpanda-broker:9092 --partitions 6 --replicas 1 --topic-config retention.ms=259200000 || true
+        rpk topic create alert --brokers redpanda-broker:9092 --partitions 3 --replicas 1 --topic-config retention.ms=259200000 || true
 
   # ==========================================
   # INGESTION GATEWAY
   # ==========================================
   ingestion-gateway:
-    build: 
+    build:
       context: ./backend
       dockerfile: internal/ingestion-gateway/Dockerfile
     container_name: ingestion-gateway
@@ -97,7 +97,7 @@ services:
       redpanda-init:
         condition: service_completed_successfully
 
- # ==========================================
+  # ==========================================
   # CLICK HOUSE DB
   # ==========================================
 
@@ -111,7 +111,7 @@ services:
     ports:
       - "8123:8123"
       - "9000:9000"
-    
+
     environment:
       CLICKHOUSE_DB: logs_db
       CLICKHOUSE_USER: admin
@@ -130,17 +130,25 @@ services:
           memory: 3G
 
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8123/ping",
+        ]
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 5s
 
- # ==========================================
+  # ==========================================
   # Processor
   # ==========================================
   logs-processor:
-    build: 
+    build:
       context: ./backend
       dockerfile: internal/processing/Dockerfile
     #container_name: logs-processor
@@ -149,12 +157,14 @@ services:
     environment:
       REDPANDA_BROKERS: "redpanda-broker:9092"
       REDPANDA_RAW_LOGS_TOPIC: "${REDPANDA_RAW_LOGS_TOPIC:-raw-logs}"
+      REDPANDA_ALERT_TOPIC: "${REDPANDA_ALERT_TOPIC:-alert}"
       PROCESSOR_CONSUMER_GROUP: "${PROCESSOR_CONSUMER_GROUP:-process-raw-log}"
       PROCESSOR_BATCH_ROWS: "${PROCESSOR_BATCH_ROWS:-8000}"
       PROCESSOR_BATCH_BYTES: "${PROCESSOR_BATCH_BYTES:-25165824}"
       PROCESSOR_FLUSH_INTERVAL_MS: "${PROCESSOR_FLUSH_INTERVAL_MS:-1000}"
       PROCESSOR_MESSAGE_BUFFER: "${PROCESSOR_MESSAGE_BUFFER:-30000}"
       PROCESSOR_SAVE_TIMEOUT_MS: "${PROCESSOR_SAVE_TIMEOUT_MS:-20000}"
+      PROCESSOR_ALERT_PRODUCER_TIMEOUT_MS: "${PROCESSOR_ALERT_PRODUCER_TIMEOUT_MS:-3000}"
       PROCESSOR_SHUTDOWN_TIMEOUT_MS: "${PROCESSOR_SHUTDOWN_TIMEOUT_MS:-30000}"
 
       CLICKHOUSE_DB: "${CLICKHOUSE_DB:-logs_db}"
