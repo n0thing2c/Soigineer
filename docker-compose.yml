@@ -5,6 +5,7 @@ networks:
 volumes:
   redpanda_data:
   clickhouse_data:
+  redis_data:
 
 services:
   # ==========================================
@@ -181,3 +182,24 @@ services:
         condition: service_healthy
       redpanda-init:
         condition: service_completed_successfully
+
+  # ==========================================
+  # REDIS - ALERT DEDUPLICATION
+  # ==========================================
+  redis:
+    image: redis:8.0-alpine
+    container_name: redis
+    restart: unless-stopped
+    networks:
+      - soigineer_net
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
