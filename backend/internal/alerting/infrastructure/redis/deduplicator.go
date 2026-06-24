@@ -26,7 +26,7 @@ func NewDeduplicator(client *goredis.Client, period time.Duration, prefix string
 	}
 }
 
-func (d *Deduplicator) CheckDuplicate(ctx context.Context, alert sharedDomain.AlertEvent) (bool, error) {
+func (d *Deduplicator) ShouldDispatch(ctx context.Context, alert sharedDomain.AlertEvent) (bool, error) {
 	key := d.prefix + alert.Fingerprint
 
 	created, err := d.client.SetNX(
