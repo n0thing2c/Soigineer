@@ -162,15 +162,17 @@ func TestProcessLogPropagatesRepoError(t *testing.T) {
 	}
 }
 
-func TestProcessLogIgnoresAlertProducerError(t *testing.T) {
+func TestProcessLogPropagatesAlertProducerError(t *testing.T) {
+	wantErr := errors.New("alert failed")
 	repo := &fakeLogRepository{}
-	producer := &fakeAlertProducer{err: errors.New("alert failed")}
+	producer := &fakeAlertProducer{err: wantErr}
 	service := NewProcessingService(repo, producer)
 
-	if err := service.ProcessLog(context.Background(), []sharedDomain.RawLogEvent{sampleRawEvent("ERROR")}); err != nil {
-		t.Fatalf("ProcessLog() error = %v", err)
+	err := service.ProcessLog(context.Background(), []sharedDomain.RawLogEvent{sampleRawEvent("ERROR")})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("ProcessLog() error = %v, want %v", err, wantErr)
 	}
-	if len(producer.alerts) != 1 || repo.saves != 1 {
+	if len(producer.alerts) != 1 || repo.saves != 0 {
 		t.Fatalf("alerts/saves = %d/%d", len(producer.alerts), repo.saves)
 	}
 }

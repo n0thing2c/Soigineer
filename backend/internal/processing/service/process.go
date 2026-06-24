@@ -95,7 +95,7 @@ func (p *ProcessingService) ProcessLog(ctx context.Context, events []sharedDomai
 		if model.Level == "ERROR" || model.Level == "CRITICAL" {
 			alertEvent := CreateAlertEvent(model)
 			if err := p.Producer.ProduceAlert(ctx, alertEvent); err != nil {
-				log.Printf("[WARNING] Failed to produce alert for EventID %s: %v\n", event.EventID, err)
+				return fmt.Errorf("produce alert event_id=%s: %w", event.EventID, err)
 			}
 		}
 		models = append(models, model)
