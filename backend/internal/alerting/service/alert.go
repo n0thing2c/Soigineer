@@ -9,7 +9,7 @@ import (
 )
 
 type AlertDeduplicator interface {
-	CheckDuplicate(ctx context.Context, alert sharedDomain.AlertEvent) (bool, error)
+	ShouldDispatch(ctx context.Context, alert sharedDomain.AlertEvent) (bool, error)
 }
 
 type ExternalNotifier interface {
@@ -35,7 +35,7 @@ func NewAlertingService(d AlertDeduplicator, n []ExternalNotifier, p RealtimePub
 }
 
 func (s *AlertingService) Alert(ctx context.Context, alert sharedDomain.AlertEvent) error {
-	isAlert, err := s.Deduplicator.CheckDuplicate(ctx, alert)
+	isAlert, err := s.Deduplicator.ShouldDispatch(ctx, alert)
 	if err != nil {
 		return fmt.Errorf("deduplicate alert: %w", err)
 	}
