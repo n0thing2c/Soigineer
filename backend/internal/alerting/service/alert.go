@@ -16,17 +16,17 @@ type ExternalNotifier interface {
 	Notify(ctx context.Context, alert sharedDomain.AlertEvent) error
 }
 
-type RealtimePubisher interface {
+type RealtimePublisher interface {
 	Publish(ctx context.Context, alert sharedDomain.AlertEvent) error
 }
 
 type AlertingService struct {
 	Deduplicator AlertDeduplicator
 	Notifiers    []ExternalNotifier
-	Publisher    RealtimePubisher
+	Publisher    RealtimePublisher
 }
 
-func NewAlertingService(d AlertDeduplicator, n []ExternalNotifier, p RealtimePubisher) *AlertingService {
+func NewAlertingService(d AlertDeduplicator, n []ExternalNotifier, p RealtimePublisher) *AlertingService {
 	return &AlertingService{
 		Deduplicator: d,
 		Notifiers:    n,
