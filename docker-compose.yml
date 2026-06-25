@@ -203,3 +203,31 @@ services:
       timeout: 3s
       retries: 10
       start_period: 5s
+
+  # ==========================================
+  # ALERT DISPATCHER
+  # ==========================================
+  alert-service:
+    build:
+      context: ./backend
+      dockerfile: internal/alerting/Dockerfile
+    container_name: alert-service
+    restart: unless-stopped
+    networks:
+      - soigineer_net
+    env_file:
+      - ./backend/.env
+    environment:
+      REDPANDA_BROKERS: "redpanda-broker:9092"
+      REDPANDA_ALERT_TOPIC: "${REDPANDA_ALERT_TOPIC:-alert}"
+      ALERT_CONSUMER_GROUP: "${ALERT_CONSUMER_GROUP:-alert-dispatcher}"
+
+      REDIS_ADDRESS: "redis:6379"
+      ALERT_DEDUP_PERIOD: "${ALERT_DEDUP_PERIOD:-60}"
+
+      TELEGRAM_TIMEOUT_MS: "${TELEGRAM_TIMEOUT_MS:-5000}"
+    depends_on:
+      redpanda-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
