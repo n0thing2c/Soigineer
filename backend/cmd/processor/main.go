@@ -28,7 +28,14 @@ func main() {
 	LogRepo := repository.NewClickHouseLogRepo(clickhouseDB, cfg.ProcessorSaveTimeout())
 	AlertProducer := queue.NewAlertProducer(cfg.KafkaBrokers, cfg.KafkaAlertTopic, cfg.AlertProducerTimeout())
 	defer AlertProducer.Close()
-	logProcessService := service.NewProcessingService(LogRepo, AlertProducer)
+	ProcessedLogProducer := queue.NewProcessedLogProducer(
+		cfg.KafkaBrokers,
+		cfg.KafkaProcessedLogsTopic,
+		cfg.ProcessedLogProducerTimeout(),
+	)
+	defer ProcessedLogProducer.Close()
+
+	logProcessService := service.NewProcessingService(LogRepo, AlertProducer, ProcessedLogProducer)
 	logConsumer := delivery.NewLogConsumer(delivery.ConsumerConfig{
 		Brokers:         cfg.KafkaBrokers,
 		Topic:           cfg.KafkaRawLogsTopic,

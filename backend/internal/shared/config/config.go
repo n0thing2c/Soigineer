@@ -13,12 +13,14 @@ type Config struct {
 	GatewayPort string `env:"GATEWAY_PORT" envDefault:"8080"`
 	KafkaPort   string `env:"REDPANDA_EXTERNAL_PORT" envDefault:"19092"`
 
-	KafkaBrokers              []string `env:"REDPANDA_BROKERS" envDefault:"localhost:19092"`
-	KafkaRawLogsTopic         string   `env:"REDPANDA_RAW_LOGS_TOPIC" envDefault:"raw-logs"`
-	KafkaAlertTopic           string   `env:"REDPANDA_ALERT_TOPIC" envDefault:"alert"`
-	KafkaWriterBatchSize      int      `env:"REDPANDA_WRITER_BATCH_SIZE" envDefault:"1000"`
-	KafkaWriterBatchTimeoutMS int      `env:"REDPANDA_WRITER_BATCH_TIMEOUT_MS" envDefault:"100"`
-	AlertProducerTimeoutMS    int      `env:"PROCESSOR_ALERT_PRODUCER_TIMEOUT_MS" envDefault:"3000"`
+	KafkaBrokers                  []string `env:"REDPANDA_BROKERS" envDefault:"localhost:19092"`
+	KafkaRawLogsTopic             string   `env:"REDPANDA_RAW_LOGS_TOPIC" envDefault:"raw-logs"`
+	KafkaAlertTopic               string   `env:"REDPANDA_ALERT_TOPIC" envDefault:"alert"`
+	KafkaProcessedLogsTopic       string   `env:"REDPANDA_PROCESSED_LOGS_TOPIC" envDefault:"processed-logs"`
+	KafkaWriterBatchSize          int      `env:"REDPANDA_WRITER_BATCH_SIZE" envDefault:"1000"`
+	KafkaWriterBatchTimeoutMS     int      `env:"REDPANDA_WRITER_BATCH_TIMEOUT_MS" envDefault:"100"`
+	AlertProducerTimeoutMS        int      `env:"PROCESSOR_ALERT_PRODUCER_TIMEOUT_MS" envDefault:"3000"`
+	ProcessedLogProducerTimeoutMS int      `env:"PROCESSOR_PROCESSED_LOG_PRODUCER_TIMEOUT_MS" envDefault:"3000"`
 
 	IngestionProducerTimeoutMS int `env:"INGESTION_PRODUCER_TIMEOUT_MS" envDefault:"3000"`
 
@@ -68,6 +70,10 @@ func (c *Config) IngestionProducerTimeout() time.Duration {
 
 func (c *Config) AlertProducerTimeout() time.Duration {
 	return time.Duration(c.AlertProducerTimeoutMS) * time.Millisecond
+}
+
+func (c *Config) ProcessedLogProducerTimeout() time.Duration {
+	return time.Duration(c.ProcessedLogProducerTimeoutMS) * time.Millisecond
 }
 
 func (c *Config) ProcessorFlushInterval() time.Duration {

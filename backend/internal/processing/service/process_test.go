@@ -32,6 +32,16 @@ func (f *fakeAlertProducer) ProduceAlert(ctx context.Context, alert sharedDomain
 	return f.err
 }
 
+type fakeProcessedLogProducer struct {
+	err    error
+	events []sharedDomain.ProcessedLogEvent
+}
+
+func (f *fakeProcessedLogProducer) ProduceProcessedLogs(ctx context.Context, events []sharedDomain.ProcessedLogEvent) error {
+	f.events = append([]sharedDomain.ProcessedLogEvent(nil), events...)
+	return f.err
+}
+
 func sampleRawEvent(level string) sharedDomain.RawLogEvent {
 	return sharedDomain.RawLogEvent{
 		EventID:    "event-1",
@@ -90,20 +100,22 @@ func TestCreateLogModelRejectsInvalidTimestamps(t *testing.T) {
 func TestProcessLogReturnsNilForEmptyInput(t *testing.T) {
 	repo := &fakeLogRepository{}
 	producer := &fakeAlertProducer{}
-	service := NewProcessingService(repo, producer)
+	processedProducer := &fakeProcessedLogProducer{}
+	service := NewProcessingService(repo, producer, processedProducer)
 
 	if err := service.ProcessLog(context.Background(), nil); err != nil {
 		t.Fatalf("ProcessLog(nil) error = %v", err)
 	}
-	if repo.saves != 0 || len(producer.alerts) != 0 {
-		t.Fatalf("repo saves/alerts = %d/%d", repo.saves, len(producer.alerts))
+	if repo.saves != 0 || len(producer.alerts) != 0 || len(processedProducer.events) != 0 {
+		t.Fatalf("repo saves/alerts/processed = %d/%d/%d", repo.saves, len(producer.alerts), len(processedProducer.events))
 	}
 }
 
 func TestProcessLogSavesValidModelsAndAlertsErrors(t *testing.T) {
 	repo := &fakeLogRepository{}
 	producer := &fakeAlertProducer{}
-	service := NewProcessingService(repo, producer)
+	processedProducer := &fakeProcessedLogProducer{}
+	service := NewProcessingService(repo, producer, processedProducer)
 
 	events := []sharedDomain.RawLogEvent{
 		sampleRawEvent("INFO"),
@@ -120,11 +132,15 @@ func TestProcessLogSavesValidModelsAndAlertsErrors(t *testing.T) {
 	if len(producer.alerts) != 2 {
 		t.Fatalf("alerts = %d, want 2", len(producer.alerts))
 	}
+	if len(processedProducer.events) != 3 {
+		t.Fatalf("processed events = %d, want 3", len(processedProducer.events))
+	}
 }
 
 func TestProcessLogSkipsInvalidEvents(t *testing.T) {
 	repo := &fakeLogRepository{}
-	service := NewProcessingService(repo, &fakeAlertProducer{})
+	processedProducer := &fakeProcessedLogProducer{}
+	service := NewProcessingService(repo, &fakeAlertProducer{}, processedProducer)
 
 	valid := sampleRawEvent("INFO")
 	invalid := sampleRawEvent("WARN")
@@ -136,11 +152,15 @@ func TestProcessLogSkipsInvalidEvents(t *testing.T) {
 	if repo.saves != 1 || len(repo.models) != 1 || repo.models[0].TraceID != valid.Payload.TraceID {
 		t.Fatalf("repo saves/models = %d/%#v", repo.saves, repo.models)
 	}
+	if len(processedProducer.events) != 1 || processedProducer.events[0].TraceID != valid.Payload.TraceID {
+		t.Fatalf("processed events = %#v", processedProducer.events)
+	}
 }
 
 func TestProcessLogReturnsNilWhenAllEventsInvalid(t *testing.T) {
 	repo := &fakeLogRepository{}
-	service := NewProcessingService(repo, &fakeAlertProducer{})
+	processedProducer := &fakeProcessedLogProducer{}
+	service := NewProcessingService(repo, &fakeAlertProducer{}, processedProducer)
 
 	invalid := sampleRawEvent("INFO")
 	invalid.Payload.Timestamp = "bad"
@@ -151,14 +171,21 @@ func TestProcessLogReturnsNilWhenAllEventsInvalid(t *testing.T) {
 	if repo.saves != 0 {
 		t.Fatalf("repo saves = %d, want 0", repo.saves)
 	}
+	if len(processedProducer.events) != 0 {
+		t.Fatalf("processed events = %d, want 0", len(processedProducer.events))
+	}
 }
 
 func TestProcessLogPropagatesRepoError(t *testing.T) {
 	wantErr := errors.New("save failed")
-	service := NewProcessingService(&fakeLogRepository{err: wantErr}, &fakeAlertProducer{})
+	processedProducer := &fakeProcessedLogProducer{}
+	service := NewProcessingService(&fakeLogRepository{err: wantErr}, &fakeAlertProducer{}, processedProducer)
 
 	if err := service.ProcessLog(context.Background(), []sharedDomain.RawLogEvent{sampleRawEvent("INFO")}); !errors.Is(err, wantErr) {
 		t.Fatalf("ProcessLog() error = %v, want %v", err, wantErr)
+	}
+	if len(processedProducer.events) != 0 {
+		t.Fatalf("processed events = %d, want 0", len(processedProducer.events))
 	}
 }
 
@@ -166,14 +193,50 @@ func TestProcessLogPropagatesAlertProducerError(t *testing.T) {
 	wantErr := errors.New("alert failed")
 	repo := &fakeLogRepository{}
 	producer := &fakeAlertProducer{err: wantErr}
-	service := NewProcessingService(repo, producer)
+	processedProducer := &fakeProcessedLogProducer{}
+	service := NewProcessingService(repo, producer, processedProducer)
 
 	err := service.ProcessLog(context.Background(), []sharedDomain.RawLogEvent{sampleRawEvent("ERROR")})
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("ProcessLog() error = %v, want %v", err, wantErr)
 	}
-	if len(producer.alerts) != 1 || repo.saves != 0 {
-		t.Fatalf("alerts/saves = %d/%d", len(producer.alerts), repo.saves)
+	if len(producer.alerts) != 1 || repo.saves != 0 || len(processedProducer.events) != 0 {
+		t.Fatalf("alerts/saves/processed = %d/%d/%d", len(producer.alerts), repo.saves, len(processedProducer.events))
+	}
+}
+
+func TestCreateProcessedLogEventMapsLogModel(t *testing.T) {
+	model, err := CreateLogModel(sampleRawEvent("ERROR"))
+	if err != nil {
+		t.Fatalf("CreateLogModel() error = %v", err)
+	}
+
+	event := CreateProcessedLogEvent(model)
+	if event.EventID != model.EventID ||
+		event.ApplicationName != model.ApplicationName ||
+		event.Level != model.Level ||
+		event.Message != model.Message ||
+		event.NormalizedMessage != model.NormalizedMessage ||
+		event.TraceID != model.TraceID ||
+		event.Fingerprint != model.Fingerprint ||
+		!event.Timestamp.Equal(model.Timestamp) ||
+		!event.ReceivedAt.Equal(model.ReceivedAt) {
+		t.Fatalf("processed event = %+v, model = %+v", event, model)
+	}
+}
+
+func TestProcessLogPropagatesProcessedLogProducerError(t *testing.T) {
+	wantErr := errors.New("processed publish failed")
+	repo := &fakeLogRepository{}
+	processedProducer := &fakeProcessedLogProducer{err: wantErr}
+	service := NewProcessingService(repo, &fakeAlertProducer{}, processedProducer)
+
+	err := service.ProcessLog(context.Background(), []sharedDomain.RawLogEvent{sampleRawEvent("INFO")})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("ProcessLog() error = %v, want %v", err, wantErr)
+	}
+	if repo.saves != 1 || len(processedProducer.events) != 1 {
+		t.Fatalf("repo saves/processed = %d/%d", repo.saves, len(processedProducer.events))
 	}
 }
 

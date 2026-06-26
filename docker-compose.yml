@@ -73,6 +73,7 @@ services:
       - |
         rpk topic create raw-logs --brokers redpanda-broker:9092 --partitions 6 --replicas 1 --topic-config retention.ms=259200000 || true
         rpk topic create alert --brokers redpanda-broker:9092 --partitions 3 --replicas 1 --topic-config retention.ms=259200000 || true
+        rpk topic create processed-logs --brokers redpanda-broker:9092 --partitions 3 --replicas 1 --topic-config retention.ms=259200000 || true
 
   # ==========================================
   # INGESTION GATEWAY
@@ -159,6 +160,7 @@ services:
       REDPANDA_BROKERS: "redpanda-broker:9092"
       REDPANDA_RAW_LOGS_TOPIC: "${REDPANDA_RAW_LOGS_TOPIC:-raw-logs}"
       REDPANDA_ALERT_TOPIC: "${REDPANDA_ALERT_TOPIC:-alert}"
+      REDPANDA_PROCESSED_LOGS_TOPIC: "${REDPANDA_PROCESSED_LOGS_TOPIC:-processed-logs}"
       PROCESSOR_CONSUMER_GROUP: "${PROCESSOR_CONSUMER_GROUP:-process-raw-log}"
       PROCESSOR_BATCH_ROWS: "${PROCESSOR_BATCH_ROWS:-8000}"
       PROCESSOR_BATCH_BYTES: "${PROCESSOR_BATCH_BYTES:-25165824}"
@@ -166,6 +168,7 @@ services:
       PROCESSOR_MESSAGE_BUFFER: "${PROCESSOR_MESSAGE_BUFFER:-30000}"
       PROCESSOR_SAVE_TIMEOUT_MS: "${PROCESSOR_SAVE_TIMEOUT_MS:-20000}"
       PROCESSOR_ALERT_PRODUCER_TIMEOUT_MS: "${PROCESSOR_ALERT_PRODUCER_TIMEOUT_MS:-3000}"
+      PROCESSOR_PROCESSED_LOG_PRODUCER_TIMEOUT_MS: "${PROCESSOR_PROCESSED_LOG_PRODUCER_TIMEOUT_MS:-3000}"
       PROCESSOR_SHUTDOWN_TIMEOUT_MS: "${PROCESSOR_SHUTDOWN_TIMEOUT_MS:-30000}"
 
       CLICKHOUSE_DB: "${CLICKHOUSE_DB:-logs_db}"

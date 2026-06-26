@@ -18,15 +18,21 @@ type AlertProducer interface {
 	ProduceAlert(ctx context.Context, log sharedDomain.AlertEvent) error
 }
 
-type ProcessingService struct {
-	Repo     LogRepository
-	Producer AlertProducer
+type ProcessedLogProducer interface {
+	ProduceProcessedLogs(ctx context.Context, logs []sharedDomain.ProcessedLogEvent) error
 }
 
-func NewProcessingService(r LogRepository, p AlertProducer) *ProcessingService {
+type ProcessingService struct {
+	Repo                 LogRepository
+	Producer             AlertProducer
+	ProcessedLogProducer ProcessedLogProducer
+}
+
+func NewProcessingService(r LogRepository, p AlertProducer, processedProducer ProcessedLogProducer) *ProcessingService {
 	return &ProcessingService{
-		Repo:     r,
-		Producer: p,
+		Repo:                 r,
+		Producer:             p,
+		ProcessedLogProducer: processedProducer,
 	}
 }
 
@@ -74,6 +80,20 @@ func CreateAlertEvent(model *domain.LogModel) sharedDomain.AlertEvent {
 	}
 }
 
+func CreateProcessedLogEvent(model *domain.LogModel) sharedDomain.ProcessedLogEvent {
+	return sharedDomain.ProcessedLogEvent{
+		EventID:           model.EventID,
+		ApplicationName:   model.ApplicationName,
+		Level:             model.Level,
+		Message:           model.Message,
+		NormalizedMessage: model.NormalizedMessage,
+		Timestamp:         model.Timestamp,
+		ReceivedAt:        model.ReceivedAt,
+		TraceID:           model.TraceID,
+		Fingerprint:       model.Fingerprint,
+	}
+}
+
 func (p *ProcessingService) ProcessLog(ctx context.Context, events []sharedDomain.RawLogEvent) error {
 	if len(events) == 0 {
 		return nil
@@ -106,5 +126,18 @@ func (p *ProcessingService) ProcessLog(ctx context.Context, events []sharedDomai
 		return nil
 	}
 
-	return p.Repo.Save(ctx, models)
+	if err := p.Repo.Save(ctx, models); err != nil {
+		return err
+	}
+
+	processedEvents := make([]sharedDomain.ProcessedLogEvent, 0, len(models))
+	for _, model := range models {
+		processedEvents = append(processedEvents, CreateProcessedLogEvent(model))
+	}
+
+	if err := p.ProcessedLogProducer.ProduceProcessedLogs(ctx, processedEvents); err != nil {
+		return fmt.Errorf("produce processed logs: %w", err)
+	}
+
+	return nil
 }
