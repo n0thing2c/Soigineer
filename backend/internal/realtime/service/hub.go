@@ -116,6 +116,12 @@ func (h *Hub) closeAllClients() {
 
 func (h *Hub) PublishLog(ctx context.Context, event sharedDomain.ProcessedLogEvent) error {
 	select {
+	case <-h.done:
+		return context.Canceled
+	default:
+	}
+
+	select {
 	case h.logQueue <- event:
 		return nil
 	case <-h.done:
@@ -126,6 +132,12 @@ func (h *Hub) PublishLog(ctx context.Context, event sharedDomain.ProcessedLogEve
 }
 
 func (h *Hub) PublishAlert(ctx context.Context, event sharedDomain.AlertEvent) error {
+	select {
+	case <-h.done:
+		return context.Canceled
+	default:
+	}
+
 	select {
 	case h.alertQueue <- event:
 		return nil
