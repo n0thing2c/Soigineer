@@ -208,20 +208,25 @@ services:
       start_period: 5s
 
   # ==========================================
-  # ALERT DISPATCHER
+  # MONITORING SERVICE - WEBSOCKET + ALERT DISPATCHER
   # ==========================================
-  alert-service:
+  monitoring-service:
     build:
       context: ./backend
-      dockerfile: internal/alerting/Dockerfile
-    container_name: alert-service
+      dockerfile: internal/monitoring/Dockerfile
+    container_name: monitoring-service
     restart: unless-stopped
     networks:
       - soigineer_net
+    ports:
+      - "${MONITORING_PORT:-8090}:8090"
     env_file:
       - ./backend/.env
     environment:
+      MONITORING_PORT: "${MONITORING_PORT:-8090}"
       REDPANDA_BROKERS: "redpanda-broker:9092"
+      REDPANDA_PROCESSED_LOGS_TOPIC: "${REDPANDA_PROCESSED_LOGS_TOPIC:-processed-logs}"
+      REALTIME_LOG_CONSUMER_GROUP: "${REALTIME_LOG_CONSUMER_GROUP:-realtime-log-viewer}"
       REDPANDA_ALERT_TOPIC: "${REDPANDA_ALERT_TOPIC:-alert}"
       ALERT_CONSUMER_GROUP: "${ALERT_CONSUMER_GROUP:-alert-dispatcher}"
 
