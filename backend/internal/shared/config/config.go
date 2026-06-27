@@ -9,9 +9,10 @@ import (
 )
 
 type Config struct {
-	AppEnv      string `env:"APP_ENV" envDefault:"local"`
-	GatewayPort string `env:"GATEWAY_PORT" envDefault:"8080"`
-	KafkaPort   string `env:"REDPANDA_EXTERNAL_PORT" envDefault:"19092"`
+	AppEnv         string `env:"APP_ENV" envDefault:"local"`
+	GatewayPort    string `env:"GATEWAY_PORT" envDefault:"8080"`
+	MonitoringPort string `env:"MONITORING_PORT" envDefault:"8090"`
+	KafkaPort      string `env:"REDPANDA_EXTERNAL_PORT" envDefault:"19092"`
 
 	KafkaBrokers                  []string `env:"REDPANDA_BROKERS" envDefault:"localhost:19092"`
 	KafkaRawLogsTopic             string   `env:"REDPANDA_RAW_LOGS_TOPIC" envDefault:"raw-logs"`
@@ -45,9 +46,10 @@ type Config struct {
 	TelegramChatID    string `env:"TELEGRAM_CHAT_ID"`
 	TelegramTimeoutMS int    `env:"TELEGRAM_TIMEOUT_MS" envDefault:"5000"`
 
-	AlertConsumerGroup string `env:"ALERT_CONSUMER_GROUP" envDefault:"alert-dispatcher"`
-	RedisAddress       string `env:"REDIS_ADDRESS" envDefault:"localhost:6379"`
-	AlertDedupPeriod   int    `env:"ALERT_DEDUP_PERIOD" envDefault:"60"`
+	AlertConsumerGroup       string `env:"ALERT_CONSUMER_GROUP" envDefault:"alert-dispatcher"`
+	RealtimeLogConsumerGroup string `env:"REALTIME_LOG_CONSUMER_GROUP" envDefault:"realtime-log-viewer"`
+	RedisAddress             string `env:"REDIS_ADDRESS" envDefault:"localhost:6379"`
+	AlertDedupPeriod         int    `env:"ALERT_DEDUP_PERIOD" envDefault:"60"`
 }
 
 func LoadConfig() *Config {
