@@ -71,6 +71,9 @@ func TestCreateLogModelSuccess(t *testing.T) {
 	if model.Message != event.Payload.Message {
 		t.Fatalf("Message = %q, want original %q", model.Message, event.Payload.Message)
 	}
+	if model.Category != string(DatabaseError) {
+		t.Fatalf("Category = %q, want %q", model.Category, DatabaseError)
+	}
 	if model.NormalizedMessage != "database connection timeout after 3000ms" {
 		t.Fatalf("NormalizedMessage = %q", model.NormalizedMessage)
 	}
@@ -131,6 +134,9 @@ func TestProcessLogSavesValidModelsAndAlertsErrors(t *testing.T) {
 	}
 	if len(producer.alerts) != 2 {
 		t.Fatalf("alerts = %d, want 2", len(producer.alerts))
+	}
+	if producer.alerts[0].Category == "" || producer.alerts[1].Category == "" {
+		t.Fatalf("alerts missing categories: %#v", producer.alerts)
 	}
 	if len(processedProducer.events) != 3 {
 		t.Fatalf("processed events = %d, want 3", len(processedProducer.events))
@@ -215,6 +221,7 @@ func TestCreateProcessedLogEventMapsLogModel(t *testing.T) {
 	if event.EventID != model.EventID ||
 		event.ApplicationName != model.ApplicationName ||
 		event.Level != model.Level ||
+		event.Category != model.Category ||
 		event.Message != model.Message ||
 		event.NormalizedMessage != model.NormalizedMessage ||
 		event.TraceID != model.TraceID ||
