@@ -6,6 +6,7 @@ type AlertEvent struct {
 	EventID         string    `json:"eventId"`
 	ApplicationName string    `json:"applicationName"`
 	Level           string    `json:"level"`
+	Category        string    `json:"category"`
 	Message         string    `json:"message"`
 	Fingerprint     string    `json:"fingerprint"`
 	TraceID         string    `json:"traceId"`
