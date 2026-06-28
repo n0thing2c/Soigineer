@@ -14,6 +14,7 @@ func TestConfigDurationHelpers(t *testing.T) {
 		ProcessorSaveTimeoutMS:           5000,
 		ProcessorShutdownMS:              7000,
 		ClickHouseConnMaxLifetimeMinutes: 60,
+		PostgresConnMaxLifetimeMinutes:   30,
 	}
 
 	if cfg.KafkaWriterBatchTimeout() != 100*time.Millisecond {
@@ -36,5 +37,8 @@ func TestConfigDurationHelpers(t *testing.T) {
 	}
 	if cfg.ClickHouseConnMaxLifetime() != time.Hour {
 		t.Fatalf("ClickHouseConnMaxLifetime() = %s", cfg.ClickHouseConnMaxLifetime())
+	}
+	if cfg.PostgresConnMaxLifetime() != 30*time.Minute {
+		t.Fatalf("PostgresConnMaxLifetime() = %s", cfg.PostgresConnMaxLifetime())
 	}
 }
