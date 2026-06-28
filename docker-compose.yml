@@ -6,6 +6,7 @@ volumes:
   redpanda_data:
   clickhouse_data:
   redis_data:
+  postgres_data:
 
 services:
   # ==========================================
@@ -208,6 +209,35 @@ services:
       start_period: 5s
 
   # ==========================================
+  # POSTGRES - METADATA + INCIDENTS
+  # ==========================================
+  postgres:
+    image: postgres:17-alpine
+    container_name: postgres
+    restart: unless-stopped
+    networks:
+      - soigineer_net
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-soigineer_metadata}"
+      POSTGRES_USER: "${POSTGRES_USER:-soigineer}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-soigineer_secret}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/deploy/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # ==========================================
   # MONITORING SERVICE - WEBSOCKET + ALERT DISPATCHER
   # ==========================================
   monitoring-service:
@@ -233,9 +263,18 @@ services:
       REDIS_ADDRESS: "redis:6379"
       ALERT_DEDUP_PERIOD: "${ALERT_DEDUP_PERIOD:-60}"
 
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: "${POSTGRES_PORT:-5432}"
+      POSTGRES_DB: "${POSTGRES_DB:-soigineer_metadata}"
+      POSTGRES_USER: "${POSTGRES_USER:-soigineer}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-soigineer_secret}"
+      POSTGRES_SSLMODE: "${POSTGRES_SSLMODE:-disable}"
+
       TELEGRAM_TIMEOUT_MS: "${TELEGRAM_TIMEOUT_MS:-5000}"
     depends_on:
       redpanda-init:
         condition: service_completed_successfully
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
