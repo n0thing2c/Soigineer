@@ -13,9 +13,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	alertDelivery "github.com/n0thing2c/Soigineer/internal/alerting/delivery"
+	alertPostgres "github.com/n0thing2c/Soigineer/internal/alerting/infrastructure/postgres"
 	alertRedis "github.com/n0thing2c/Soigineer/internal/alerting/infrastructure/redis"
 	"github.com/n0thing2c/Soigineer/internal/alerting/infrastructure/telegram"
 	alertService "github.com/n0thing2c/Soigineer/internal/alerting/service"
+	metadataPostgres "github.com/n0thing2c/Soigineer/internal/metadata/infrastructure/postgres"
 	realtimeDelivery "github.com/n0thing2c/Soigineer/internal/realtime/delivery"
 	realtimeService "github.com/n0thing2c/Soigineer/internal/realtime/service"
 	"github.com/n0thing2c/Soigineer/internal/shared/config"
@@ -50,6 +52,12 @@ func main() {
 		log.Fatalf("connect to Redis at %s: %v", cfg.RedisAddress, err)
 	}
 
+	postgresDB, err := metadataPostgres.NewDB(cfg)
+	if err != nil {
+		log.Fatalf("connect to Postgres: %v", err)
+	}
+	defer postgresDB.Close()
+
 	telegramNotifier, err := telegram.NewNotifier(
 		cfg.TelegramBotToken,
 		cfg.TelegramChatID,
@@ -72,6 +80,7 @@ func main() {
 		deduplicator,
 		[]alertService.ExternalNotifier{telegramNotifier},
 		alertPublisher,
+		alertPostgres.NewIncidentRecorder(postgresDB),
 	)
 
 	alertConsumer := alertDelivery.NewAlertConsumer(alertDelivery.AlertConsumerConfig{
