@@ -11,8 +11,12 @@ CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     username TEXT NOT NULL UNIQUE,
     role TEXT NOT NULL CHECK (role IN ('admin', 'engineer')),
+    password_hash TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS user_applications (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
