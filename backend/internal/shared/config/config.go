@@ -11,6 +11,7 @@ import (
 type Config struct {
 	AppEnv         string `env:"APP_ENV" envDefault:"local"`
 	GatewayPort    string `env:"GATEWAY_PORT" envDefault:"8080"`
+	AuthPort       string `env:"AUTH_PORT" envDefault:"8070"`
 	MonitoringPort string `env:"MONITORING_PORT" envDefault:"8090"`
 	KafkaPort      string `env:"REDPANDA_EXTERNAL_PORT" envDefault:"19092"`
 
@@ -51,6 +52,11 @@ type Config struct {
 	PostgresMaxOpenConns           int    `env:"POSTGRES_MAX_OPEN_CONNS" envDefault:"10"`
 	PostgresMaxIdleConns           int    `env:"POSTGRES_MAX_IDLE_CONNS" envDefault:"5"`
 	PostgresConnMaxLifetimeMinutes int    `env:"POSTGRES_CONN_MAX_LIFETIME_MINUTES" envDefault:"30"`
+
+	AuthTokenSecret           string `env:"AUTH_TOKEN_SECRET" envDefault:"dev-auth-token-secret-change-me"`
+	AuthTokenTTLMinutes       int    `env:"AUTH_TOKEN_TTL_MINUTES" envDefault:"480"`
+	BootstrapAdminPassword    string `env:"BOOTSTRAP_ADMIN_PASSWORD" envDefault:"admin123"`
+	BootstrapEngineerPassword string `env:"BOOTSTRAP_ENGINEER_PASSWORD" envDefault:"engineer123"`
 
 	TelegramBotToken  string `env:"TELEGRAM_BOT_TOKEN"`
 	TelegramChatID    string `env:"TELEGRAM_CHAT_ID"`
@@ -106,6 +112,10 @@ func (c *Config) ClickHouseConnMaxLifetime() time.Duration {
 
 func (c *Config) PostgresConnMaxLifetime() time.Duration {
 	return time.Duration(c.PostgresConnMaxLifetimeMinutes) * time.Minute
+}
+
+func (c *Config) AuthTokenTTL() time.Duration {
+	return time.Duration(c.AuthTokenTTLMinutes) * time.Minute
 }
 
 func (c *Config) TelegramTimeout() time.Duration {
