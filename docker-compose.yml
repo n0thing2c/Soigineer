@@ -238,6 +238,38 @@ services:
       start_period: 5s
 
   # ==========================================
+  # AUTH SERVICE - LOGIN + USER MANAGEMENT
+  # ==========================================
+  auth-service:
+    build:
+      context: ./backend
+      dockerfile: internal/auth/Dockerfile
+    container_name: auth-service
+    restart: unless-stopped
+    networks:
+      - soigineer_net
+    ports:
+      - "${AUTH_PORT:-8070}:8070"
+    env_file:
+      - ./backend/.env
+    environment:
+      AUTH_PORT: "${AUTH_PORT:-8070}"
+      AUTH_TOKEN_SECRET: "${AUTH_TOKEN_SECRET:-dev-auth-token-secret-change-me}"
+      AUTH_TOKEN_TTL_MINUTES: "${AUTH_TOKEN_TTL_MINUTES:-480}"
+      BOOTSTRAP_ADMIN_PASSWORD: "${BOOTSTRAP_ADMIN_PASSWORD:-admin123}"
+      BOOTSTRAP_ENGINEER_PASSWORD: "${BOOTSTRAP_ENGINEER_PASSWORD:-engineer123}"
+
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: "${POSTGRES_PORT:-5432}"
+      POSTGRES_DB: "${POSTGRES_DB:-soigineer_metadata}"
+      POSTGRES_USER: "${POSTGRES_USER:-soigineer}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-soigineer_secret}"
+      POSTGRES_SSLMODE: "${POSTGRES_SSLMODE:-disable}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ==========================================
   # MONITORING SERVICE - WEBSOCKET + ALERT DISPATCHER
   # ==========================================
   monitoring-service:
@@ -260,6 +292,9 @@ services:
       REDPANDA_ALERT_TOPIC: "${REDPANDA_ALERT_TOPIC:-alert}"
       ALERT_CONSUMER_GROUP: "${ALERT_CONSUMER_GROUP:-alert-dispatcher}"
 
+      AUTH_TOKEN_SECRET: "${AUTH_TOKEN_SECRET:-dev-auth-token-secret-change-me}"
+      AUTH_TOKEN_TTL_MINUTES: "${AUTH_TOKEN_TTL_MINUTES:-480}"
+
       REDIS_ADDRESS: "redis:6379"
       ALERT_DEDUP_PERIOD: "${ALERT_DEDUP_PERIOD:-60}"
 
@@ -271,10 +306,22 @@ services:
       POSTGRES_SSLMODE: "${POSTGRES_SSLMODE:-disable}"
 
       TELEGRAM_TIMEOUT_MS: "${TELEGRAM_TIMEOUT_MS:-5000}"
+
+      CLICKHOUSE_DB: "${CLICKHOUSE_DB:-logs_db}"
+      CLICKHOUSE_USER: "${CLICKHOUSE_USER:-admin}"
+      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-secret123}"
+      CLICKHOUSE_HOST: "clickhouse"
+      CLICKHOUSE_PORT: "${CLICKHOUSE_PORT:-9000}"
     depends_on:
       redpanda-init:
         condition: service_completed_successfully
+      clickhouse:
+        condition: service_healthy
       redis:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      auth-service:
+        condition: service_started
+
+
