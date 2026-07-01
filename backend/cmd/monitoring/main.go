@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -17,7 +18,13 @@ import (
 	alertRedis "github.com/n0thing2c/Soigineer/internal/alerting/infrastructure/redis"
 	"github.com/n0thing2c/Soigineer/internal/alerting/infrastructure/telegram"
 	alertService "github.com/n0thing2c/Soigineer/internal/alerting/service"
+	authToken "github.com/n0thing2c/Soigineer/internal/auth/token"
 	metadataPostgres "github.com/n0thing2c/Soigineer/internal/metadata/infrastructure/postgres"
+	monitoringAccess "github.com/n0thing2c/Soigineer/internal/monitoring/access"
+	monitoringDelivery "github.com/n0thing2c/Soigineer/internal/monitoring/delivery"
+	monitoringRepository "github.com/n0thing2c/Soigineer/internal/monitoring/repository"
+	monitoringService "github.com/n0thing2c/Soigineer/internal/monitoring/service"
+	clickhouseDatabase "github.com/n0thing2c/Soigineer/internal/processing/infrastructure/database"
 	realtimeDelivery "github.com/n0thing2c/Soigineer/internal/realtime/delivery"
 	realtimeService "github.com/n0thing2c/Soigineer/internal/realtime/service"
 	"github.com/n0thing2c/Soigineer/internal/shared/config"
@@ -58,16 +65,30 @@ func main() {
 	}
 	defer postgresDB.Close()
 
-	telegramNotifier, err := telegram.NewNotifier(
-		cfg.TelegramBotToken,
-		cfg.TelegramChatID,
-		cfg.TelegramTimeout(),
-	)
+	clickhouseDB, err := clickhouseDatabase.NewClickHouse(cfg)
 	if err != nil {
-		log.Fatalf("create Telegram notifier: %v", err)
+		log.Fatalf("connect to ClickHouse: %v", err)
+	}
+	defer clickhouseDB.Close()
+
+	notifiers := make([]alertService.ExternalNotifier, 0, 1)
+	if strings.TrimSpace(cfg.TelegramBotToken) != "" && strings.TrimSpace(cfg.TelegramChatID) != "" {
+		telegramNotifier, err := telegram.NewNotifier(
+			cfg.TelegramBotToken,
+			cfg.TelegramChatID,
+			cfg.TelegramTimeout(),
+		)
+		if err != nil {
+			log.Fatalf("create Telegram notifier: %v", err)
+		}
+		notifiers = append(notifiers, telegramNotifier)
+	} else {
+		log.Println("[INFO] Telegram notifier disabled because TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is empty")
 	}
 
-	hub := realtimeService.NewHub(realtimeService.AllowAllAuthorizer{})
+	tokenManager := authToken.NewManager(cfg.AuthTokenSecret, cfg.AuthTokenTTL())
+	principalStore := monitoringAccess.NewPrincipalStoreWithToken(postgresDB, tokenManager)
+	hub := realtimeService.NewHub(realtimeService.RBACAuthorizer{})
 	alertPublisher := realtimeService.NewAlertPublisher(hub)
 
 	deduplicator := alertRedis.NewDeduplicator(
@@ -78,7 +99,7 @@ func main() {
 
 	alertingService := alertService.NewAlertingService(
 		deduplicator,
-		[]alertService.ExternalNotifier{telegramNotifier},
+		notifiers,
 		alertPublisher,
 		alertPostgres.NewIncidentRecorder(postgresDB),
 	)
@@ -100,11 +121,20 @@ func main() {
 	)
 	defer processedLogConsumer.Close()
 
-	wsHandler := realtimeDelivery.NewWebSocketHandler(hub)
+	wsHandler := realtimeDelivery.NewWebSocketHandlerWithPrincipalLoader(hub, principalStore)
+	apiService := monitoringService.NewMonitoringService(
+		principalStore,
+		monitoringRepository.NewClickHouseReader(clickhouseDB),
+		monitoringRepository.NewPostgresReader(postgresDB),
+	)
+	apiHandler := monitoringDelivery.NewHandler(apiService)
+
 	engine := gin.Default()
+	engine.Use(corsMiddleware())
 	engine.GET("/healthz", wsHandler.Health)
 
 	v1 := engine.Group("/v1")
+	monitoringDelivery.RegisterRoutes(v1, apiHandler)
 	v1.GET("/realtime/logs", wsHandler.HandleLogs)
 	v1.GET("/realtime/alerts", wsHandler.HandleAlerts)
 
@@ -157,4 +187,19 @@ func main() {
 	stop()
 	wg.Wait()
 	log.Println("[INFO] Monitoring service stopped")
+}
+
+func corsMiddleware() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		ctx.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		ctx.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-ID")
+		ctx.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, OPTIONS")
+
+		if ctx.Request.Method == http.MethodOptions {
+			ctx.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+
+		ctx.Next()
+	}
 }
