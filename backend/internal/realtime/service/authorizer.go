@@ -24,3 +24,19 @@ func (AllowAllAuthorizer) AuthorizeAlert(
 ) bool {
 	return true
 }
+
+type RBACAuthorizer struct{}
+
+func (RBACAuthorizer) AuthorizeLog(
+	principal Principal,
+	log sharedDomain.ProcessedLogEvent,
+) bool {
+	return principal.CanAccessApplication(log.ApplicationName)
+}
+
+func (RBACAuthorizer) AuthorizeAlert(
+	principal Principal,
+	alert sharedDomain.AlertEvent,
+) bool {
+	return principal.CanAccessApplication(alert.ApplicationName)
+}

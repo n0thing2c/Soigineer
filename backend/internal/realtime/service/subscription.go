@@ -12,9 +12,18 @@ const (
 )
 
 type Principal struct {
-	UserID string
-	Role   string
-	Apps   map[string]bool
+	UserID   string
+	Username string
+	Role     string
+	Apps     map[string]bool
+}
+
+func (p Principal) IsAdmin() bool {
+	return p.Role == "admin"
+}
+
+func (p Principal) CanAccessApplication(app string) bool {
+	return p.IsAdmin() || p.Apps[app]
 }
 
 type Subscription struct {
