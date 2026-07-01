@@ -15,6 +15,8 @@ func TestConfigDurationHelpers(t *testing.T) {
 		ProcessorShutdownMS:              7000,
 		ClickHouseConnMaxLifetimeMinutes: 60,
 		PostgresConnMaxLifetimeMinutes:   30,
+		AuthTokenTTLMinutes:              480,
+		AuthRefreshTokenTTLMinutes:       10080,
 	}
 
 	if cfg.KafkaWriterBatchTimeout() != 100*time.Millisecond {
@@ -40,5 +42,11 @@ func TestConfigDurationHelpers(t *testing.T) {
 	}
 	if cfg.PostgresConnMaxLifetime() != 30*time.Minute {
 		t.Fatalf("PostgresConnMaxLifetime() = %s", cfg.PostgresConnMaxLifetime())
+	}
+	if cfg.AuthTokenTTL() != 8*time.Hour {
+		t.Fatalf("AuthTokenTTL() = %s", cfg.AuthTokenTTL())
+	}
+	if cfg.AuthRefreshTokenTTL() != 7*24*time.Hour {
+		t.Fatalf("AuthRefreshTokenTTL() = %s", cfg.AuthRefreshTokenTTL())
 	}
 }
