@@ -256,6 +256,7 @@ services:
       AUTH_PORT: "${AUTH_PORT:-8070}"
       AUTH_TOKEN_SECRET: "${AUTH_TOKEN_SECRET:-dev-auth-token-secret-change-me}"
       AUTH_TOKEN_TTL_MINUTES: "${AUTH_TOKEN_TTL_MINUTES:-480}"
+      AUTH_REFRESH_TOKEN_TTL_MINUTES: "${AUTH_REFRESH_TOKEN_TTL_MINUTES:-10080}"
       BOOTSTRAP_ADMIN_PASSWORD: "${BOOTSTRAP_ADMIN_PASSWORD:-admin123}"
       BOOTSTRAP_ENGINEER_PASSWORD: "${BOOTSTRAP_ENGINEER_PASSWORD:-engineer123}"
 
@@ -324,4 +325,18 @@ services:
       auth-service:
         condition: service_started
 
-
+  # ==========================================
+  # REACT DASHBOARD
+  # ==========================================
+  dashboard:
+    build:
+      context: ./frontend
+    container_name: soigineer-dashboard
+    restart: unless-stopped
+    networks:
+      - soigineer_net
+    ports:
+      - "${DASHBOARD_PORT:-5173}:80"
+    depends_on:
+      monitoring-service:
+        condition: service_started

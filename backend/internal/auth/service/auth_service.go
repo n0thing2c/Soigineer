@@ -2,6 +2,10 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -13,25 +17,39 @@ import (
 )
 
 var (
-	ErrInvalidCredentials = errors.New("invalid username or password")
-	ErrForbidden          = errors.New("admin role is required")
-	ErrInvalidRole        = errors.New("role must be admin or engineer")
+	ErrInvalidCredentials  = errors.New("invalid username or password")
+	ErrForbidden           = errors.New("admin role is required")
+	ErrInvalidRole         = errors.New("role must be admin or engineer")
+	ErrInvalidRefreshToken = errors.New("invalid refresh token")
 )
 
 type AuthService struct {
-	users  *repository.UserRepository
-	tokens *token.Manager
+	users           *repository.UserRepository
+	refreshTokens   *repository.RefreshTokenRepository
+	tokens          *token.Manager
+	refreshTokenTTL time.Duration
 }
 
 type LoginResult struct {
-	Token string          `json:"token"`
-	User  repository.User `json:"user"`
+	Token        string          `json:"token"`
+	RefreshToken string          `json:"refreshToken"`
+	User         repository.User `json:"user"`
 }
 
-func NewAuthService(users *repository.UserRepository, tokens *token.Manager) *AuthService {
+func NewAuthService(
+	users *repository.UserRepository,
+	refreshTokens *repository.RefreshTokenRepository,
+	tokens *token.Manager,
+	refreshTokenTTL time.Duration,
+) *AuthService {
+	if refreshTokenTTL <= 0 {
+		refreshTokenTTL = 7 * 24 * time.Hour
+	}
 	return &AuthService{
-		users:  users,
-		tokens: tokens,
+		users:           users,
+		refreshTokens:   refreshTokens,
+		tokens:          tokens,
+		refreshTokenTTL: refreshTokenTTL,
 	}
 }
 
@@ -40,6 +58,10 @@ func (s *AuthService) BootstrapDefaults(
 	adminPassword string,
 	engineerPassword string,
 ) error {
+	if err := s.refreshTokens.EnsureSchema(ctx); err != nil {
+		return err
+	}
+
 	adminHash, err := hashPassword(adminPassword)
 	if err != nil {
 		return err
@@ -68,12 +90,61 @@ func (s *AuthService) Login(
 		return LoginResult{}, ErrInvalidCredentials
 	}
 
-	rawToken, err := s.tokens.Issue(user.ID, user.Username, user.Role, time.Now().UTC())
+	return s.issueTokenPair(ctx, user, time.Now().UTC())
+}
+
+func (s *AuthService) Refresh(
+	ctx context.Context,
+	rawRefreshToken string,
+) (LoginResult, error) {
+	rawRefreshToken = strings.TrimSpace(rawRefreshToken)
+	if rawRefreshToken == "" {
+		return LoginResult{}, ErrInvalidRefreshToken
+	}
+
+	now := time.Now().UTC()
+	newRefreshToken, newRefreshTokenHash, err := generateRefreshToken()
 	if err != nil {
 		return LoginResult{}, err
 	}
 
-	return LoginResult{Token: rawToken, User: user}, nil
+	userID, err := s.refreshTokens.Rotate(
+		ctx,
+		hashRefreshToken(rawRefreshToken),
+		newRefreshTokenHash,
+		now.Add(s.refreshTokenTTL),
+		now,
+	)
+	if errors.Is(err, repository.ErrRefreshTokenNotFound) {
+		return LoginResult{}, ErrInvalidRefreshToken
+	}
+	if err != nil {
+		return LoginResult{}, err
+	}
+
+	user, err := s.users.FindByID(ctx, userID)
+	if err != nil {
+		return LoginResult{}, err
+	}
+
+	accessToken, err := s.tokens.Issue(user.ID, user.Username, user.Role, now)
+	if err != nil {
+		return LoginResult{}, err
+	}
+
+	return LoginResult{
+		Token:        accessToken,
+		RefreshToken: newRefreshToken,
+		User:         user,
+	}, nil
+}
+
+func (s *AuthService) Logout(ctx context.Context, rawRefreshToken string) error {
+	rawRefreshToken = strings.TrimSpace(rawRefreshToken)
+	if rawRefreshToken == "" {
+		return ErrInvalidRefreshToken
+	}
+	return s.refreshTokens.Revoke(ctx, hashRefreshToken(rawRefreshToken), time.Now().UTC())
 }
 
 func (s *AuthService) Verify(rawToken string) (token.Claims, error) {
@@ -159,4 +230,48 @@ func hashPassword(password string) (string, error) {
 		return "", fmt.Errorf("hash password: %w", err)
 	}
 	return string(hash), nil
+}
+
+func (s *AuthService) issueTokenPair(
+	ctx context.Context,
+	user repository.User,
+	now time.Time,
+) (LoginResult, error) {
+	accessToken, err := s.tokens.Issue(user.ID, user.Username, user.Role, now)
+	if err != nil {
+		return LoginResult{}, err
+	}
+
+	refreshToken, refreshTokenHash, err := generateRefreshToken()
+	if err != nil {
+		return LoginResult{}, err
+	}
+	if err := s.refreshTokens.Save(
+		ctx,
+		user.ID,
+		refreshTokenHash,
+		now.Add(s.refreshTokenTTL),
+	); err != nil {
+		return LoginResult{}, err
+	}
+
+	return LoginResult{
+		Token:        accessToken,
+		RefreshToken: refreshToken,
+		User:         user,
+	}, nil
+}
+
+func generateRefreshToken() (string, string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", "", fmt.Errorf("generate refresh token: %w", err)
+	}
+	raw := base64.RawURLEncoding.EncodeToString(bytes)
+	return raw, hashRefreshToken(raw), nil
+}
+
+func hashRefreshToken(raw string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(raw)))
+	return hex.EncodeToString(sum[:])
 }

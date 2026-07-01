@@ -31,9 +31,12 @@ func main() {
 	defer db.Close()
 
 	userRepo := authRepository.NewUserRepository(db)
+	refreshTokenRepo := authRepository.NewRefreshTokenRepository(db)
 	auth := authService.NewAuthService(
 		userRepo,
+		refreshTokenRepo,
 		token.NewManager(cfg.AuthTokenSecret, cfg.AuthTokenTTL()),
+		cfg.AuthRefreshTokenTTL(),
 	)
 
 	if err := auth.BootstrapDefaults(

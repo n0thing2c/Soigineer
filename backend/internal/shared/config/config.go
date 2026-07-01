@@ -53,10 +53,11 @@ type Config struct {
 	PostgresMaxIdleConns           int    `env:"POSTGRES_MAX_IDLE_CONNS" envDefault:"5"`
 	PostgresConnMaxLifetimeMinutes int    `env:"POSTGRES_CONN_MAX_LIFETIME_MINUTES" envDefault:"30"`
 
-	AuthTokenSecret           string `env:"AUTH_TOKEN_SECRET" envDefault:"dev-auth-token-secret-change-me"`
-	AuthTokenTTLMinutes       int    `env:"AUTH_TOKEN_TTL_MINUTES" envDefault:"480"`
-	BootstrapAdminPassword    string `env:"BOOTSTRAP_ADMIN_PASSWORD" envDefault:"admin123"`
-	BootstrapEngineerPassword string `env:"BOOTSTRAP_ENGINEER_PASSWORD" envDefault:"engineer123"`
+	AuthTokenSecret            string `env:"AUTH_TOKEN_SECRET" envDefault:"dev-auth-token-secret-change-me"`
+	AuthTokenTTLMinutes        int    `env:"AUTH_TOKEN_TTL_MINUTES" envDefault:"480"`
+	AuthRefreshTokenTTLMinutes int    `env:"AUTH_REFRESH_TOKEN_TTL_MINUTES" envDefault:"10080"`
+	BootstrapAdminPassword     string `env:"BOOTSTRAP_ADMIN_PASSWORD" envDefault:"admin123"`
+	BootstrapEngineerPassword  string `env:"BOOTSTRAP_ENGINEER_PASSWORD" envDefault:"engineer123"`
 
 	TelegramBotToken  string `env:"TELEGRAM_BOT_TOKEN"`
 	TelegramChatID    string `env:"TELEGRAM_CHAT_ID"`
@@ -116,6 +117,10 @@ func (c *Config) PostgresConnMaxLifetime() time.Duration {
 
 func (c *Config) AuthTokenTTL() time.Duration {
 	return time.Duration(c.AuthTokenTTLMinutes) * time.Minute
+}
+
+func (c *Config) AuthRefreshTokenTTL() time.Duration {
+	return time.Duration(c.AuthRefreshTokenTTLMinutes) * time.Minute
 }
 
 func (c *Config) TelegramTimeout() time.Duration {

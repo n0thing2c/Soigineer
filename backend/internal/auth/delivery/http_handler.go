@@ -21,6 +21,8 @@ func NewHandler(auth *service.AuthService) *Handler {
 
 func RegisterRoutes(group *gin.RouterGroup, h *Handler) {
 	group.POST("/auth/login", h.Login)
+	group.POST("/auth/refresh", h.Refresh)
+	group.POST("/auth/logout", h.Logout)
 	group.GET("/auth/me", h.Me)
 	group.GET("/admin/users", h.ListUsers)
 	group.POST("/admin/users", h.CreateUser)
@@ -49,6 +51,49 @@ func (h *Handler) Login(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, result)
+}
+
+func (h *Handler) Refresh(ctx *gin.Context) {
+	var payload struct {
+		RefreshToken string `json:"refreshToken"`
+	}
+	if err := ctx.ShouldBindJSON(&payload); err != nil {
+		respondError(ctx, http.StatusBadRequest, err)
+		return
+	}
+
+	result, err := h.auth.Refresh(ctx.Request.Context(), payload.RefreshToken)
+	if errors.Is(err, service.ErrInvalidRefreshToken) {
+		respondError(ctx, http.StatusUnauthorized, err)
+		return
+	}
+	if err != nil {
+		respondError(ctx, http.StatusInternalServerError, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, result)
+}
+
+func (h *Handler) Logout(ctx *gin.Context) {
+	var payload struct {
+		RefreshToken string `json:"refreshToken"`
+	}
+	if err := ctx.ShouldBindJSON(&payload); err != nil {
+		respondError(ctx, http.StatusBadRequest, err)
+		return
+	}
+
+	if err := h.auth.Logout(ctx.Request.Context(), payload.RefreshToken); err != nil {
+		if errors.Is(err, service.ErrInvalidRefreshToken) {
+			respondError(ctx, http.StatusBadRequest, err)
+			return
+		}
+		respondError(ctx, http.StatusInternalServerError, err)
+		return
+	}
+
+	ctx.Status(http.StatusNoContent)
 }
 
 func (h *Handler) Me(ctx *gin.Context) {
