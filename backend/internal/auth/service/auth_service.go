@@ -21,6 +21,7 @@ var (
 	ErrForbidden           = errors.New("admin role is required")
 	ErrInvalidRole         = errors.New("role must be admin or engineer")
 	ErrInvalidRefreshToken = errors.New("invalid refresh token")
+	ErrInvalidApplication  = errors.New("application name is required")
 )
 
 type AuthService struct {
@@ -180,6 +181,23 @@ func (s *AuthService) ListUsers(ctx context.Context) ([]repository.User, error) 
 
 func (s *AuthService) ListApplications(ctx context.Context) ([]string, error) {
 	return s.users.ListApplications(ctx)
+}
+
+func (s *AuthService) CreateApplication(
+	ctx context.Context,
+	name string,
+	displayName string,
+) (repository.Application, error) {
+	name = strings.TrimSpace(name)
+	displayName = strings.TrimSpace(displayName)
+	if name == "" {
+		return repository.Application{}, ErrInvalidApplication
+	}
+	if displayName == "" {
+		displayName = name
+	}
+
+	return s.users.CreateApplication(ctx, name, displayName)
 }
 
 func (s *AuthService) CreateUser(

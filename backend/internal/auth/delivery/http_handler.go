@@ -28,6 +28,7 @@ func RegisterRoutes(group *gin.RouterGroup, h *Handler) {
 	group.POST("/admin/users", h.CreateUser)
 	group.PUT("/admin/users/:id/applications", h.ReplaceApplications)
 	group.GET("/admin/applications", h.ListApplications)
+	group.POST("/admin/applications", h.CreateApplication)
 }
 
 func (h *Handler) Login(ctx *gin.Context) {
@@ -187,6 +188,36 @@ func (h *Handler) ListApplications(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"items": apps})
+}
+
+func (h *Handler) CreateApplication(ctx *gin.Context) {
+	if _, ok := h.requireAdmin(ctx); !ok {
+		return
+	}
+
+	var payload struct {
+		Name        string `json:"name"`
+		DisplayName string `json:"displayName"`
+	}
+	if err := ctx.ShouldBindJSON(&payload); err != nil {
+		respondError(ctx, http.StatusBadRequest, err)
+		return
+	}
+
+	app, err := h.auth.CreateApplication(ctx.Request.Context(), payload.Name, payload.DisplayName)
+	if errors.Is(err, service.ErrInvalidApplication) {
+		respondError(ctx, http.StatusBadRequest, err)
+		return
+	}
+	if errors.Is(err, repository.ErrApplicationExists) {
+		respondError(ctx, http.StatusConflict, err)
+		return
+	}
+	if err != nil {
+		respondError(ctx, http.StatusInternalServerError, err)
+		return
+	}
+	ctx.JSON(http.StatusCreated, app)
 }
 
 func (h *Handler) requireAuthenticated(ctx *gin.Context) (repository.User, bool) {

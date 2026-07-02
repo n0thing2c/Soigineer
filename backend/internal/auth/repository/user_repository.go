@@ -9,6 +9,7 @@ import (
 )
 
 var ErrUserNotFound = errors.New("user not found")
+var ErrApplicationExists = errors.New("application already exists")
 
 type User struct {
 	ID           string   `json:"id"`
@@ -23,6 +24,12 @@ type CreateUserInput struct {
 	Role         string
 	PasswordHash string
 	Applications []string
+}
+
+type Application struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
 }
 
 type UserRepository struct {
@@ -207,6 +214,66 @@ func (r *UserRepository) ListApplications(ctx context.Context) ([]string, error)
 	}
 
 	return apps, nil
+}
+
+func (r *UserRepository) CreateApplication(
+	ctx context.Context,
+	name string,
+	displayName string,
+) (Application, error) {
+	name = strings.TrimSpace(name)
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		displayName = name
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Application{}, fmt.Errorf("begin create application transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var app Application
+	err = tx.QueryRowContext(
+		ctx,
+		`
+		INSERT INTO applications (name, display_name)
+		VALUES ($1, $2)
+		ON CONFLICT (name) DO NOTHING
+		RETURNING id::text, name, display_name
+		`,
+		name,
+		displayName,
+	).Scan(&app.ID, &app.Name, &app.DisplayName)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Application{}, ErrApplicationExists
+	}
+	if err != nil {
+		return Application{}, fmt.Errorf("insert application: %w", err)
+	}
+
+	if _, err = tx.ExecContext(
+		ctx,
+		`
+		INSERT INTO alert_rules (application_id, level, enabled, dedup_window_seconds, telegram_enabled)
+		SELECT $1, levels.level, true, 60, true
+		FROM (VALUES ('ERROR'), ('CRITICAL')) AS levels(level)
+		ON CONFLICT (application_id, level) DO NOTHING
+		`,
+		app.ID,
+	); err != nil {
+		return Application{}, fmt.Errorf("create default alert rules: %w", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return Application{}, fmt.Errorf("commit create application transaction: %w", err)
+	}
+
+	return app, nil
 }
 
 func (r *UserRepository) find(ctx context.Context, condition string, arg string) (User, error) {
