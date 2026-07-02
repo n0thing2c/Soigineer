@@ -331,6 +331,10 @@ services:
   dashboard:
     build:
       context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_AUTH_API_URL: "${DASHBOARD_AUTH_API_URL:-http://localhost:8070/v1}"
+        VITE_MONITORING_API_URL: "${DASHBOARD_MONITORING_API_URL:-http://localhost:8090/v1}"
     container_name: soigineer-dashboard
     restart: unless-stopped
     networks:
@@ -338,5 +342,7 @@ services:
     ports:
       - "${DASHBOARD_PORT:-5173}:80"
     depends_on:
+      auth-service:
+        condition: service_started
       monitoring-service:
         condition: service_started
