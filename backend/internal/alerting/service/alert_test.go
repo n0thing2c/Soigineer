@@ -11,10 +11,12 @@ import (
 
 type fakeDeduplicator struct {
 	shouldDispatch bool
+	window         time.Duration
 	err            error
 }
 
-func (f fakeDeduplicator) ShouldDispatch(ctx context.Context, alert sharedDomain.AlertEvent) (bool, error) {
+func (f *fakeDeduplicator) ShouldDispatch(ctx context.Context, alert sharedDomain.AlertEvent, window time.Duration) (bool, error) {
+	f.window = window
 	return f.shouldDispatch, f.err
 }
 
@@ -50,6 +52,15 @@ func (f *fakeIncidentRecorder) Record(ctx context.Context, alert sharedDomain.Al
 	return f.err
 }
 
+type fakeRuleResolver struct {
+	rule AlertRule
+	err  error
+}
+
+func (f fakeRuleResolver) Resolve(context.Context, sharedDomain.AlertEvent) (AlertRule, error) {
+	return f.rule, f.err
+}
+
 func sampleAlert() sharedDomain.AlertEvent {
 	return sharedDomain.AlertEvent{
 		EventID:         "event-1",
@@ -68,7 +79,7 @@ func TestAlertRecordsAndDispatchesFirstAlert(t *testing.T) {
 	publisher := &fakePublisher{}
 	incidents := &fakeIncidentRecorder{}
 	service := NewAlertingService(
-		fakeDeduplicator{shouldDispatch: true},
+		&fakeDeduplicator{shouldDispatch: true},
 		[]ExternalNotifier{notifier},
 		publisher,
 		incidents,
@@ -91,7 +102,7 @@ func TestAlertRecordsSuppressedDuplicateWithoutDispatching(t *testing.T) {
 	publisher := &fakePublisher{}
 	incidents := &fakeIncidentRecorder{}
 	service := NewAlertingService(
-		fakeDeduplicator{shouldDispatch: false},
+		&fakeDeduplicator{shouldDispatch: false},
 		[]ExternalNotifier{notifier},
 		publisher,
 		incidents,
@@ -112,7 +123,7 @@ func TestAlertRecordsSuppressedDuplicateWithoutDispatching(t *testing.T) {
 func TestAlertPropagatesIncidentRecordError(t *testing.T) {
 	wantErr := errors.New("postgres unavailable")
 	service := NewAlertingService(
-		fakeDeduplicator{shouldDispatch: true},
+		&fakeDeduplicator{shouldDispatch: true},
 		nil,
 		&fakePublisher{},
 		&fakeIncidentRecorder{err: wantErr},
@@ -120,5 +131,75 @@ func TestAlertPropagatesIncidentRecordError(t *testing.T) {
 
 	if err := service.Alert(context.Background(), sampleAlert()); !errors.Is(err, wantErr) {
 		t.Fatalf("Alert() error = %v, want %v", err, wantErr)
+	}
+}
+
+func TestAlertDisabledRuleRecordsWithoutPublishingOrNotifying(t *testing.T) {
+	notifier := &fakeNotifier{}
+	publisher := &fakePublisher{}
+	incidents := &fakeIncidentRecorder{}
+	service := NewAlertingServiceWithRules(
+		&fakeDeduplicator{shouldDispatch: true},
+		[]ExternalNotifier{notifier},
+		publisher,
+		incidents,
+		fakeRuleResolver{rule: AlertRule{Enabled: false}},
+	)
+
+	if err := service.Alert(context.Background(), sampleAlert()); err != nil {
+		t.Fatalf("Alert() error = %v", err)
+	}
+
+	if incidents.calls != 1 || incidents.dispatched {
+		t.Fatalf("incident calls/dispatched = %d/%v, want 1/false", incidents.calls, incidents.dispatched)
+	}
+	if publisher.calls != 0 || notifier.calls != 0 {
+		t.Fatalf("publisher/notifier calls = %d/%d, want 0/0", publisher.calls, notifier.calls)
+	}
+}
+
+func TestAlertTelegramDisabledStillPublishesRealtime(t *testing.T) {
+	notifier := &fakeNotifier{}
+	publisher := &fakePublisher{}
+	service := NewAlertingServiceWithRules(
+		&fakeDeduplicator{shouldDispatch: true},
+		[]ExternalNotifier{notifier},
+		publisher,
+		&fakeIncidentRecorder{},
+		fakeRuleResolver{rule: AlertRule{Enabled: true, TelegramEnabled: false}},
+	)
+
+	if err := service.Alert(context.Background(), sampleAlert()); err != nil {
+		t.Fatalf("Alert() error = %v", err)
+	}
+
+	if publisher.calls != 1 {
+		t.Fatalf("publisher calls = %d, want 1", publisher.calls)
+	}
+	if notifier.calls != 0 {
+		t.Fatalf("notifier calls = %d, want 0", notifier.calls)
+	}
+}
+
+func TestAlertUsesRuleDedupWindow(t *testing.T) {
+	deduplicator := &fakeDeduplicator{shouldDispatch: false}
+	service := NewAlertingServiceWithRules(
+		deduplicator,
+		nil,
+		&fakePublisher{},
+		&fakeIncidentRecorder{},
+		fakeRuleResolver{rule: AlertRule{
+			Enabled:         true,
+			TelegramEnabled: true,
+			DedupWindow:     45 * time.Second,
+		}},
+	)
+
+	if err := service.Alert(context.Background(), sampleAlert()); err != nil {
+		t.Fatalf("Alert() error = %v", err)
+	}
+
+	if deduplicator.window != 45*time.Second {
+		t.Fatalf("dedup window = %s, want 45s", deduplicator.window)
 	}
 }

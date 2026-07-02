@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	sharedDomain "github.com/n0thing2c/Soigineer/internal/shared/domain"
 )
 
 type AlertDeduplicator interface {
-	ShouldDispatch(ctx context.Context, alert sharedDomain.AlertEvent) (bool, error)
+	ShouldDispatch(ctx context.Context, alert sharedDomain.AlertEvent, window time.Duration) (bool, error)
 }
 
 type ExternalNotifier interface {
@@ -24,11 +25,22 @@ type IncidentRecorder interface {
 	Record(ctx context.Context, alert sharedDomain.AlertEvent, dispatched bool) error
 }
 
+type AlertRule struct {
+	Enabled         bool
+	DedupWindow     time.Duration
+	TelegramEnabled bool
+}
+
+type AlertRuleResolver interface {
+	Resolve(ctx context.Context, alert sharedDomain.AlertEvent) (AlertRule, error)
+}
+
 type AlertingService struct {
 	Deduplicator AlertDeduplicator
 	Notifiers    []ExternalNotifier
 	Publisher    RealtimePublisher
 	Incidents    IncidentRecorder
+	Rules        AlertRuleResolver
 }
 
 func NewAlertingService(
@@ -45,8 +57,41 @@ func NewAlertingService(
 	}
 }
 
+func NewAlertingServiceWithRules(
+	d AlertDeduplicator,
+	n []ExternalNotifier,
+	p RealtimePublisher,
+	i IncidentRecorder,
+	r AlertRuleResolver,
+) *AlertingService {
+	service := NewAlertingService(d, n, p, i)
+	service.Rules = r
+	return service
+}
+
 func (s *AlertingService) Alert(ctx context.Context, alert sharedDomain.AlertEvent) error {
-	shouldDispatch, err := s.Deduplicator.ShouldDispatch(ctx, alert)
+	rule := AlertRule{
+		Enabled:         true,
+		TelegramEnabled: true,
+	}
+	if s.Rules != nil {
+		resolved, err := s.Rules.Resolve(ctx, alert)
+		if err != nil {
+			return fmt.Errorf("resolve alert rule: %w", err)
+		}
+		rule = resolved
+	}
+
+	if !rule.Enabled {
+		if s.Incidents != nil {
+			if err := s.Incidents.Record(ctx, alert, false); err != nil {
+				return fmt.Errorf("record incident: %w", err)
+			}
+		}
+		return nil
+	}
+
+	shouldDispatch, err := s.Deduplicator.ShouldDispatch(ctx, alert, rule.DedupWindow)
 	if err != nil {
 		return fmt.Errorf("deduplicate alert: %w", err)
 	}
@@ -61,8 +106,14 @@ func (s *AlertingService) Alert(ctx context.Context, alert sharedDomain.AlertEve
 		return nil
 	}
 
-	if err := s.Publisher.Publish(ctx, alert); err != nil {
-		log.Printf("publish websocket: %v", err)
+	if s.Publisher != nil {
+		if err := s.Publisher.Publish(ctx, alert); err != nil {
+			log.Printf("publish websocket: %v", err)
+		}
+	}
+
+	if !rule.TelegramEnabled {
+		return nil
 	}
 
 	for _, notifier := range s.Notifiers {

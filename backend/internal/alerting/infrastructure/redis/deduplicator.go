@@ -26,14 +26,22 @@ func NewDeduplicator(client *goredis.Client, period time.Duration, prefix string
 	}
 }
 
-func (d *Deduplicator) ShouldDispatch(ctx context.Context, alert sharedDomain.AlertEvent) (bool, error) {
+func (d *Deduplicator) ShouldDispatch(
+	ctx context.Context,
+	alert sharedDomain.AlertEvent,
+	window time.Duration,
+) (bool, error) {
 	key := d.prefix + alert.Fingerprint
+	period := d.period
+	if window > 0 {
+		period = window
+	}
 
 	created, err := d.client.SetNX(
 		ctx,
 		key,
 		alert.EventID,
-		d.period,
+		period,
 	).Result()
 	if err != nil {
 		return false, fmt.Errorf("set dedup key %q: %w", key, err)

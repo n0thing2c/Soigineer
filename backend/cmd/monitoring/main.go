@@ -97,11 +97,12 @@ func main() {
 		alertDedupKeyPrefix,
 	)
 
-	alertingService := alertService.NewAlertingService(
+	alertingService := alertService.NewAlertingServiceWithRules(
 		deduplicator,
 		notifiers,
 		alertPublisher,
 		alertPostgres.NewIncidentRecorder(postgresDB),
+		alertPostgres.NewAlertRuleResolver(postgresDB),
 	)
 
 	alertConsumer := alertDelivery.NewAlertConsumer(alertDelivery.AlertConsumerConfig{
