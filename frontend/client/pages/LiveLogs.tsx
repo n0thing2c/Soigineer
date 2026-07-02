@@ -5,12 +5,13 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useRealtimeStream } from "@/hooks/useRealtimeStream";
 import { formatNumber, formatTime, truncateMiddle } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Search, SlidersHorizontal, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 const levels: Array<LogLevel | ""> = ["", "INFO", "WARN", "ERROR", "CRITICAL"];
+const logPageSize = 500;
 
 export default function LiveLogs() {
   const { token } = useAuth();
@@ -22,6 +23,7 @@ export default function LiveLogs() {
   const [selectedEvent, setSelectedEvent] = useState<ProcessedLogEvent | null>(null);
   const [tailLogs, setTailLogs] = useState(true);
   const [realtimePaused, setRealtimePaused] = useState(false);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const appFilter = selectedApp ? [selectedApp] : undefined;
   const levelFilter = selectedLevel ? [selectedLevel] : undefined;
@@ -39,16 +41,31 @@ export default function LiveLogs() {
     }
   }, [searchParams, selectedApp]);
 
-  const { data: historicalLogs = [], isLoading } = useQuery({
+  const {
+    data: historicalLogPages,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+  } = useInfiniteQuery({
     queryKey: ["logs", token, selectedApp, selectedLevel],
-    queryFn: () =>
+    queryFn: ({ pageParam }) =>
       monitoringApi.logs(token!, {
         app: appFilter,
         level: levelFilter,
-        limit: 100,
+        limit: logPageSize,
+        offset: pageParam,
       }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length === logPageSize ? allPages.length * logPageSize : undefined,
     enabled: Boolean(token),
   });
+
+  const historicalLogs = useMemo(
+    () => historicalLogPages?.pages.flat() ?? [],
+    [historicalLogPages],
+  );
 
   const liveLogs = useRealtimeStream("logs", token, {
     app: appFilter,
@@ -67,10 +84,32 @@ export default function LiveLogs() {
     return Array.from(byId.values())
       .filter((log) => {
         const text = `${log.applicationName} ${log.level} ${log.message} ${log.traceId}`.toLowerCase();
-        return text.includes(search.toLowerCase());
+        const matchesSearch = text.includes(search.toLowerCase());
+        const matchesApp = !selectedApp || log.applicationName === selectedApp;
+        const matchesLevel = !selectedLevel || log.level === selectedLevel;
+        return matchesSearch && matchesApp && matchesLevel;
       })
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [historicalLogs, liveLogs.events, search]);
+  }, [historicalLogs, liveLogs.events, search, selectedApp, selectedLevel]);
+
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (!target || !hasNextPage || isFetchingNextPage) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          fetchNextPage();
+        }
+      },
+      { rootMargin: "240px" },
+    );
+    observer.observe(target);
+
+    return () => observer.disconnect();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, logs.length]);
 
   const counts = useMemo(() => {
     return logs.reduce(
@@ -227,6 +266,22 @@ export default function LiveLogs() {
                 ) : null}
                 . Adjust your search or wait for new events.
               </p>
+            </div>
+          )}
+
+          {logs.length > 0 && (
+            <div ref={loadMoreRef} className="flex min-h-14 items-center justify-center border-t border-border bg-white p-3">
+              {hasNextPage ? (
+                <button
+                  onClick={() => fetchNextPage()}
+                  disabled={isFetchingNextPage}
+                  className="h-8 border border-border bg-white px-4 text-xs font-semibold hover:bg-secondary disabled:opacity-60"
+                >
+                  {isFetchingNextPage ? "Loading..." : "Load More"}
+                </button>
+              ) : (
+                <span className="text-xs font-semibold text-muted-foreground">End of log history</span>
+              )}
             </div>
           )}
         </div>

@@ -19,6 +19,7 @@ type LogFilters struct {
 	From         time.Time
 	To           time.Time
 	Limit        int
+	Offset       int
 }
 
 type HealthRow struct {
@@ -50,6 +51,8 @@ func (r *ClickHouseReader) ListLogs(
 
 	limit := normalizeLimit(filters.Limit)
 	args = append(args, limit)
+	offset := normalizeOffset(filters.Offset)
+	args = append(args, offset)
 
 	query := fmt.Sprintf(
 		`
@@ -67,6 +70,7 @@ func (r *ClickHouseReader) ListLogs(
 		%s
 		ORDER BY Timestamp DESC
 		LIMIT ?
+		OFFSET ?
 		`,
 		where,
 	)
@@ -241,4 +245,11 @@ func normalizeLimit(limit int) int {
 		return maxQueryLimit
 	}
 	return limit
+}
+
+func normalizeOffset(offset int) int {
+	if offset <= 0 {
+		return 0
+	}
+	return offset
 }

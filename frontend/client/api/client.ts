@@ -217,7 +217,7 @@ export const monitoringApi = {
 
   async logs(
     token: string,
-    filters: { app?: string[]; level?: string[]; from?: string; to?: string; limit?: number },
+    filters: { app?: string[]; level?: string[]; from?: string; to?: string; limit?: number; offset?: number },
   ) {
     return items(
       await request<{ items: ProcessedLogEvent[] }>(

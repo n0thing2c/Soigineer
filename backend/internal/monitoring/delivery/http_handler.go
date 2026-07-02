@@ -179,6 +179,7 @@ func parseLogFilters(ctx *gin.Context) repository.LogFilters {
 		From:         parseTime(ctx.Query("from")),
 		To:           parseTime(ctx.Query("to")),
 		Limit:        parseLimit(ctx.Query("limit")),
+		Offset:       parseOffset(ctx.Query("offset")),
 	}
 }
 
@@ -212,6 +213,14 @@ func parseLimit(value string) int {
 		return 0
 	}
 	return limit
+}
+
+func parseOffset(value string) int {
+	offset, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return 0
+	}
+	return offset
 }
 
 func respondError(ctx *gin.Context, status int, err error) {
