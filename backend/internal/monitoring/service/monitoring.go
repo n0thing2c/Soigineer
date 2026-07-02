@@ -18,6 +18,8 @@ var (
 	ErrForbidden              = errors.New("admin role is required")
 	ErrInvalidIncidentStatus  = errors.New("status must be OPEN, ACKED, or RESOLVED")
 	ErrInvalidAlertRuleUpdate = errors.New("dedupWindowSeconds must be greater than 0")
+	ErrInvalidAlertRuleCreate = errors.New("applicationName is required, level must be ERROR or CRITICAL, and dedupWindowSeconds must be greater than 0")
+	ErrConflict               = errors.New("resource already exists")
 	ErrNotFound               = errors.New("resource not found")
 )
 
@@ -42,6 +44,7 @@ type MetadataReader interface {
 	UpdateIncidentStatus(context.Context, string, string) error
 	ListAlertRules(context.Context) ([]repository.AlertRule, error)
 	UpdateAlertRule(context.Context, string, repository.AlertRuleUpdate) error
+	CreateAlertRule(context.Context, repository.AlertRuleCreate) (repository.AlertRule, error)
 }
 
 type MonitoringService struct {
@@ -172,6 +175,31 @@ func (s *MonitoringService) UpdateAlertRule(
 	return nil
 }
 
+func (s *MonitoringService) CreateAlertRule(
+	ctx context.Context,
+	credentials Credentials,
+	create repository.AlertRuleCreate,
+) (repository.AlertRule, error) {
+	if _, err := s.requireAdmin(ctx, credentials); err != nil {
+		return repository.AlertRule{}, err
+	}
+
+	create.ApplicationName = strings.TrimSpace(create.ApplicationName)
+	create.Level = strings.ToUpper(strings.TrimSpace(create.Level))
+	if create.ApplicationName == "" || !validAlertRuleLevel(create.Level) || create.DedupWindowSeconds <= 0 {
+		return repository.AlertRule{}, ErrInvalidAlertRuleCreate
+	}
+
+	rule, err := s.metadata.CreateAlertRule(ctx, create)
+	if errors.Is(err, repository.ErrApplicationMissing) {
+		return repository.AlertRule{}, ErrNotFound
+	}
+	if errors.Is(err, repository.ErrAlertRuleExists) {
+		return repository.AlertRule{}, ErrConflict
+	}
+	return rule, err
+}
+
 func (s *MonitoringService) resolvePrincipal(
 	ctx context.Context,
 	credentials Credentials,
@@ -220,6 +248,15 @@ func normalizeIncidentStatus(status string) string {
 func validIncidentStatus(status string) bool {
 	switch status {
 	case "OPEN", "ACKED", "RESOLVED":
+		return true
+	default:
+		return false
+	}
+}
+
+func validAlertRuleLevel(level string) bool {
+	switch level {
+	case "ERROR", "CRITICAL":
 		return true
 	default:
 		return false

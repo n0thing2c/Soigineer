@@ -3,11 +3,17 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/n0thing2c/Soigineer/internal/monitoring/access"
+)
+
+var (
+	ErrAlertRuleExists    = errors.New("alert rule already exists")
+	ErrApplicationMissing = errors.New("application not found")
 )
 
 type IncidentFilters struct {
@@ -41,6 +47,14 @@ type AlertRule struct {
 }
 
 type AlertRuleUpdate struct {
+	Enabled            bool
+	DedupWindowSeconds int
+	TelegramEnabled    bool
+}
+
+type AlertRuleCreate struct {
+	ApplicationName    string
+	Level              string
 	Enabled            bool
 	DedupWindowSeconds int
 	TelegramEnabled    bool
@@ -253,6 +267,61 @@ func (r *PostgresReader) UpdateAlertRule(
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+func (r *PostgresReader) CreateAlertRule(
+	ctx context.Context,
+	create AlertRuleCreate,
+) (AlertRule, error) {
+	var applicationID string
+	if err := r.db.QueryRowContext(
+		ctx,
+		"SELECT id::text FROM applications WHERE name = $1",
+		create.ApplicationName,
+	).Scan(&applicationID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return AlertRule{}, ErrApplicationMissing
+		}
+		return AlertRule{}, fmt.Errorf("find application for alert rule: %w", err)
+	}
+
+	var rule AlertRule
+	err := r.db.QueryRowContext(
+		ctx,
+		`
+		INSERT INTO alert_rules (
+			application_id,
+			level,
+			enabled,
+			dedup_window_seconds,
+			telegram_enabled
+		)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (application_id, level) DO NOTHING
+		RETURNING id::text, $6::text, level, enabled, dedup_window_seconds, telegram_enabled
+		`,
+		applicationID,
+		create.Level,
+		create.Enabled,
+		create.DedupWindowSeconds,
+		create.TelegramEnabled,
+		create.ApplicationName,
+	).Scan(
+		&rule.ID,
+		&rule.ApplicationName,
+		&rule.Level,
+		&rule.Enabled,
+		&rule.DedupWindowSeconds,
+		&rule.TelegramEnabled,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AlertRule{}, ErrAlertRuleExists
+	}
+	if err != nil {
+		return AlertRule{}, fmt.Errorf("create alert rule: %w", err)
+	}
+
+	return rule, nil
 }
 
 func buildIncidentWhere(

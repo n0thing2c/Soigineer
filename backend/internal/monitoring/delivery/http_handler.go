@@ -28,6 +28,7 @@ func RegisterRoutes(group *gin.RouterGroup, h *Handler) {
 	group.PATCH("/incidents/:id/status", h.UpdateIncidentStatus)
 	group.GET("/analytics/health", h.Health)
 	group.GET("/admin/alert-rules", h.AlertRules)
+	group.POST("/admin/alert-rules", h.CreateAlertRule)
 	group.PUT("/admin/alert-rules/:id", h.UpdateAlertRule)
 }
 
@@ -107,6 +108,33 @@ func (h *Handler) UpdateAlertRule(ctx *gin.Context) {
 		return
 	}
 	ctx.Status(http.StatusNoContent)
+}
+
+func (h *Handler) CreateAlertRule(ctx *gin.Context) {
+	var payload struct {
+		ApplicationName    string `json:"applicationName"`
+		Level              string `json:"level"`
+		Enabled            bool   `json:"enabled"`
+		DedupWindowSeconds int    `json:"dedupWindowSeconds"`
+		TelegramEnabled    bool   `json:"telegramEnabled"`
+	}
+	if err := ctx.ShouldBindJSON(&payload); err != nil {
+		respondError(ctx, http.StatusBadRequest, err)
+		return
+	}
+
+	rule, err := h.service.CreateAlertRule(ctx.Request.Context(), credentials(ctx), repository.AlertRuleCreate{
+		ApplicationName:    payload.ApplicationName,
+		Level:              payload.Level,
+		Enabled:            payload.Enabled,
+		DedupWindowSeconds: payload.DedupWindowSeconds,
+		TelegramEnabled:    payload.TelegramEnabled,
+	})
+	if err != nil {
+		respondError(ctx, statusForError(err), err)
+		return
+	}
+	ctx.JSON(http.StatusCreated, rule)
 }
 
 func (h *Handler) respondItem(ctx *gin.Context, value any, err error) {
@@ -200,8 +228,11 @@ func statusForError(err error) int {
 	case errors.Is(err, monitoringService.ErrForbidden):
 		return http.StatusForbidden
 	case errors.Is(err, monitoringService.ErrInvalidIncidentStatus),
-		errors.Is(err, monitoringService.ErrInvalidAlertRuleUpdate):
+		errors.Is(err, monitoringService.ErrInvalidAlertRuleUpdate),
+		errors.Is(err, monitoringService.ErrInvalidAlertRuleCreate):
 		return http.StatusBadRequest
+	case errors.Is(err, monitoringService.ErrConflict):
+		return http.StatusConflict
 	case errors.Is(err, monitoringService.ErrNotFound):
 		return http.StatusNotFound
 	default:
