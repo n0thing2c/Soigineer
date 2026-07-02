@@ -1,1 +1,16 @@
+# Environment files
 .env
+.env.*
+!.env.example
+
+node_modules/
+frontend/node_modules/
+
+# Build output
+dist/
+frontend/dist/
+
+
+*.log
+.vscode/
+
