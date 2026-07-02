@@ -54,14 +54,6 @@ export default function Settings() {
             </button>
           </div>
         </section>
-
-        <section className="border border-border bg-white p-6">
-          <h2 className="mb-4 text-xl font-bold">API Endpoints</h2>
-          <div className="space-y-3 text-sm">
-            <SettingRow label="Auth API" value={apiConfig.authBaseUrl} />
-            <SettingRow label="Monitoring API" value={apiConfig.monitoringBaseUrl} />
-          </div>
-        </section>
       </div>
     </DashboardLayout>
   );

@@ -96,16 +96,6 @@ export default function Login() {
             </button>
           </form>
         </div>
-
-        <div className="text-center">
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-foreground">
-            Demo Access
-          </p>
-          <div className="space-y-1 font-mono text-sm text-muted-foreground">
-            <p>admin / admin123</p>
-            <p>engineer-payment / engineer123</p>
-          </div>
-        </div>
       </div>
     </div>
   );
