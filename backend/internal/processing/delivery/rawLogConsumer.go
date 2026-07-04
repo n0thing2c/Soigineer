@@ -95,9 +95,23 @@ func (c *LogConsumer) Start(ctx context.Context) {
 	ticker := time.NewTicker(c.flushInterval)
 	defer ticker.Stop()
 
-	flush := func(flushCtx context.Context, reason string) {
+	shouldFlushLimit := func() bool {
+		return len(batchEvents) >= c.maxBatchRows || currentBatchBytes >= c.maxBatchBytes
+	}
+
+	waitBeforeRetry := func(waitCtx context.Context) {
+		timer := time.NewTimer(c.flushInterval)
+		defer timer.Stop()
+
+		select {
+		case <-waitCtx.Done():
+		case <-timer.C:
+		}
+	}
+
+	flush := func(flushCtx context.Context, reason string) bool {
 		if len(batchEvents) == 0 {
-			return
+			return true
 		}
 
 		batchSize := len(batchEvents)
@@ -111,7 +125,7 @@ func (c *LogConsumer) Start(ctx context.Context) {
 				currentBatchBytes,
 				err,
 			)
-			return
+			return false
 		}
 
 		if err := c.reader.CommitMessages(flushCtx, batchMsgs...); err != nil {
@@ -122,13 +136,14 @@ func (c *LogConsumer) Start(ctx context.Context) {
 				currentBatchBytes,
 				err,
 			)
-			return
+			return false
 		}
 
 		log.Printf("[INFO] Flushed rows=%d size_mb=%.2f reason=%s", batchSize, batchMB, reason)
 		batchEvents = batchEvents[:0]
 		batchMsgs = batchMsgs[:0]
 		currentBatchBytes = 0
+		return true
 	}
 
 	shutdownFlush := func(reason string) {
@@ -138,6 +153,15 @@ func (c *LogConsumer) Start(ctx context.Context) {
 	}
 
 	for {
+		if ctx.Err() == nil && !shuttingDown && shouldFlushLimit() {
+			if flush(ctx, "limit") {
+				ticker.Reset(c.flushInterval)
+				continue
+			}
+			waitBeforeRetry(ctx)
+			continue
+		}
+
 		select {
 		case <-ctx.Done():
 			if !shuttingDown {
@@ -173,11 +197,6 @@ func (c *LogConsumer) Start(ctx context.Context) {
 			batchEvents = append(batchEvents, event)
 			batchMsgs = append(batchMsgs, msg)
 			currentBatchBytes += len(msg.Value)
-
-			if len(batchEvents) >= c.maxBatchRows || currentBatchBytes >= c.maxBatchBytes {
-				flush(ctx, "limit")
-				ticker.Reset(c.flushInterval)
-			}
 
 		case <-ticker.C:
 			if shuttingDown {
