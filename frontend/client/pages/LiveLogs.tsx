@@ -348,15 +348,15 @@ function LogDetails({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-y-0 right-0 z-40 w-[360px] border-l border-border bg-background shadow-xl">
-      <div className="flex h-16 items-center justify-between border-b border-border px-4">
+    <div className="fixed inset-y-0 right-0 z-40 flex h-dvh w-[360px] max-w-full flex-col border-l border-border bg-background shadow-xl">
+      <div className="flex h-16 shrink-0 items-center justify-between border-b border-border px-4">
         <h3 className="text-lg font-bold">Log Event Details</h3>
         <button onClick={onClose} className="p-1 hover:bg-secondary" title="Close">
           <X className="h-5 w-5" />
         </button>
       </div>
 
-      <div className="space-y-5 p-4">
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
         <div className="flex items-center gap-2">
           <LevelBadge level={event.level} />
           <span className="font-mono text-xs text-muted-foreground">{formatTime(event.timestamp)} UTC</span>
@@ -378,7 +378,7 @@ function LogDetails({
           <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
             Raw JSON
           </p>
-          <pre className="max-h-56 overflow-auto bg-slate-900 p-3 text-xs text-slate-100">
+          <pre className="max-h-80 overflow-auto bg-slate-900 p-3 text-xs text-slate-100">
             {JSON.stringify(event, null, 2)}
           </pre>
         </div>
@@ -399,8 +399,10 @@ function DetailRow({
   return (
     <div className="border-b border-border pb-2">
       <div className="flex items-center justify-between gap-4 text-sm">
-        <span className="font-bold text-muted-foreground">{label}</span>
-        <span className={cn("font-mono text-xs", shaded && "bg-secondary px-2 py-1")}>{value || "-"}</span>
+        <span className="shrink-0 font-bold text-muted-foreground">{label}</span>
+        <span className={cn("min-w-0 text-right font-mono text-xs", shaded && "bg-secondary px-2 py-1")}>
+          {value || "-"}
+        </span>
       </div>
     </div>
   );
