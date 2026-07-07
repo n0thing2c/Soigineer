@@ -17,30 +17,32 @@ const (
 )
 
 type Config struct {
-	BaseURL        string
-	ServerCount    int
-	LogsPerSec     int
-	Mode           Mode
-	BatchSize      int
-	SingleRatio    float64
-	Duration       time.Duration
-	RunForever     bool
-	Timeout        time.Duration
-	RetryCount     int
-	RetryBackoff   time.Duration
-	Seed           int64
-	ProgressEvery  time.Duration
-	WorkerCount    int
-	DispatchBuffer int
-	ReportFile     string
-	ReportWait     time.Duration
-	KafkaBrokers   []string
-	KafkaTopic     string
-	ClickHouseHost string
-	ClickHousePort string
-	ClickHouseDB   string
-	ClickHouseUser string
-	ClickHousePass string
+	BaseURL         string
+	ServerCount     int
+	LogsPerSec      int
+	Mode            Mode
+	BatchSize       int
+	SingleRatio     float64
+	Duration        time.Duration
+	RunForever      bool
+	Timeout         time.Duration
+	RetryCount      int
+	RetryBackoff    time.Duration
+	Seed            int64
+	ProgressEvery   time.Duration
+	WorkerCount     int
+	DispatchBuffer  int
+	ReportFile      string
+	ReportWait      time.Duration
+	InsertPollEvery time.Duration
+	KafkaBrokers    []string
+	KafkaTopic      string
+	ConsumerGroup   string
+	ClickHouseHost  string
+	ClickHousePort  string
+	ClickHouseDB    string
+	ClickHouseUser  string
+	ClickHousePass  string
 }
 
 func ParseConfig(args []string) (Config, error) {
@@ -65,8 +67,10 @@ func ParseConfig(args []string) (Config, error) {
 	fs.IntVar(&cfg.DispatchBuffer, "dispatch-buffer", 0, "Job queue buffer; 0 means auto")
 	fs.StringVar(&cfg.ReportFile, "report-file", "", "Markdown report output path; empty means auto")
 	fs.DurationVar(&cfg.ReportWait, "report-wait", 15*time.Second, "Wait time after load to observe queue-to-DB progress")
+	fs.DurationVar(&cfg.InsertPollEvery, "insert-poll-every", 250*time.Millisecond, "Polling interval for batch send-to-ClickHouse latency observation")
 	fs.StringVar(&kafkaBrokers, "kafka-brokers", "localhost:19092", "Comma-separated Redpanda/Kafka brokers")
 	fs.StringVar(&cfg.KafkaTopic, "kafka-topic", "raw-logs", "Redpanda/Kafka topic for raw logs")
+	fs.StringVar(&cfg.ConsumerGroup, "consumer-group", "process-raw-log", "Kafka consumer group used to compute raw log consumer lag")
 	fs.StringVar(&cfg.ClickHouseHost, "clickhouse-host", "localhost", "ClickHouse host for report verification")
 	fs.StringVar(&cfg.ClickHousePort, "clickhouse-port", "9000", "ClickHouse port for report verification")
 	fs.StringVar(&cfg.ClickHouseDB, "clickhouse-db", "logs_db", "ClickHouse database for report verification")
@@ -130,11 +134,17 @@ func (c Config) Validate() error {
 	if c.ReportWait < 0 {
 		return fmt.Errorf("report-wait must be greater than or equal to 0")
 	}
+	if c.InsertPollEvery < 0 {
+		return fmt.Errorf("insert-poll-every must be greater than or equal to 0")
+	}
 	if len(c.KafkaBrokers) == 0 {
 		return fmt.Errorf("kafka-brokers must contain at least one broker")
 	}
 	if strings.TrimSpace(c.KafkaTopic) == "" {
 		return fmt.Errorf("kafka-topic must not be empty")
+	}
+	if strings.TrimSpace(c.ConsumerGroup) == "" {
+		return fmt.Errorf("consumer-group must not be empty")
 	}
 	if _, err := url.ParseRequestURI(strings.TrimRight(c.BaseURL, "/")); err != nil {
 		return fmt.Errorf("base-url must be a valid URL: %w", err)

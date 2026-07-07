@@ -23,34 +23,49 @@ type Metrics struct {
 	statusCounts map[int]uint64
 	errorCounts  map[string]uint64
 	latencies    []time.Duration
+
+	insertLatencies        []time.Duration
+	insertObservedBatches  uint64
+	insertTimedOutBatches  uint64
+	insertObservationError string
+	consumerLag            int64
+	consumerLagAvailable   bool
 }
 
 type Snapshot struct {
-	StartedAt     time.Time
-	FinishedAt    time.Time
-	Duration      time.Duration
-	PlannedLogs   uint64
-	SentLogs      uint64
-	FailedLogs    uint64
-	DroppedLogs   uint64
-	SuccessReqs   uint64
-	FailedReqs    uint64
-	DroppedReqs   uint64
-	ThroughputLPS float64
-	MinLatency    time.Duration
-	AvgLatency    time.Duration
-	P95Latency    time.Duration
-	MaxLatency    time.Duration
-	StatusCounts  map[int]uint64
-	NetworkErrors map[string]uint64
+	StartedAt              time.Time
+	FinishedAt             time.Time
+	Duration               time.Duration
+	PlannedLogs            uint64
+	SentLogs               uint64
+	FailedLogs             uint64
+	DroppedLogs            uint64
+	SuccessReqs            uint64
+	FailedReqs             uint64
+	DroppedReqs            uint64
+	ThroughputLPS          float64
+	MinLatency             time.Duration
+	AvgLatency             time.Duration
+	P95Latency             time.Duration
+	MaxLatency             time.Duration
+	InsertObservedBatches  uint64
+	InsertTimedOutBatches  uint64
+	AvgInsertLatency       time.Duration
+	P95InsertLatency       time.Duration
+	InsertObservationError string
+	ConsumerLag            int64
+	ConsumerLagAvailable   bool
+	StatusCounts           map[int]uint64
+	NetworkErrors          map[string]uint64
 }
 
 func NewMetrics(start time.Time) *Metrics {
 	return &Metrics{
-		start:        start,
-		statusCounts: make(map[int]uint64),
-		errorCounts:  make(map[string]uint64),
-		latencies:    make([]time.Duration, 0, 1024),
+		start:           start,
+		statusCounts:    make(map[int]uint64),
+		errorCounts:     make(map[string]uint64),
+		latencies:       make([]time.Duration, 0, 1024),
+		insertLatencies: make([]time.Duration, 0, 1024),
 	}
 }
 
@@ -88,6 +103,41 @@ func (m *Metrics) RecordDropped(job Job) {
 	m.droppedLogs += uint64(len(job.Logs))
 }
 
+func (m *Metrics) RecordBatchInsertLatency(latency time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.insertObservedBatches++
+	m.insertLatencies = append(m.insertLatencies, latency)
+}
+
+func (m *Metrics) RecordBatchInsertTimeout(count int) {
+	if count <= 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.insertTimedOutBatches += uint64(count)
+}
+
+func (m *Metrics) RecordInsertObservationError(err error) {
+	if err == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.insertObservationError = err.Error()
+}
+
+func (m *Metrics) SetConsumerLag(lag int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if lag < 0 {
+		lag = 0
+	}
+	m.consumerLag = lag
+	m.consumerLagAvailable = true
+}
+
 func (m *Metrics) Finish(end time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -113,6 +163,11 @@ func (m *Metrics) Snapshot() Snapshot {
 		return latencies[i] < latencies[j]
 	})
 
+	insertLatencies := append([]time.Duration(nil), m.insertLatencies...)
+	sort.Slice(insertLatencies, func(i, j int) bool {
+		return insertLatencies[i] < insertLatencies[j]
+	})
+
 	statusCounts := make(map[int]uint64, len(m.statusCounts))
 	for key, value := range m.statusCounts {
 		statusCounts[key] = value
@@ -124,19 +179,24 @@ func (m *Metrics) Snapshot() Snapshot {
 	}
 
 	snapshot := Snapshot{
-		StartedAt:     m.start,
-		FinishedAt:    finished,
-		Duration:      duration,
-		PlannedLogs:   m.plannedLogs,
-		SentLogs:      m.sentLogs,
-		FailedLogs:    m.failedLogs,
-		DroppedLogs:   m.droppedLogs,
-		SuccessReqs:   m.successReqs,
-		FailedReqs:    m.failedReqs,
-		DroppedReqs:   m.droppedReqs,
-		ThroughputLPS: float64(m.sentLogs) / duration.Seconds(),
-		StatusCounts:  statusCounts,
-		NetworkErrors: errorCounts,
+		StartedAt:              m.start,
+		FinishedAt:             finished,
+		Duration:               duration,
+		PlannedLogs:            m.plannedLogs,
+		SentLogs:               m.sentLogs,
+		FailedLogs:             m.failedLogs,
+		DroppedLogs:            m.droppedLogs,
+		SuccessReqs:            m.successReqs,
+		FailedReqs:             m.failedReqs,
+		DroppedReqs:            m.droppedReqs,
+		ThroughputLPS:          float64(m.sentLogs) / duration.Seconds(),
+		InsertObservedBatches:  m.insertObservedBatches,
+		InsertTimedOutBatches:  m.insertTimedOutBatches,
+		InsertObservationError: m.insertObservationError,
+		ConsumerLag:            m.consumerLag,
+		ConsumerLagAvailable:   m.consumerLagAvailable,
+		StatusCounts:           statusCounts,
+		NetworkErrors:          errorCounts,
 	}
 
 	if len(latencies) > 0 {
@@ -144,6 +204,10 @@ func (m *Metrics) Snapshot() Snapshot {
 		snapshot.MaxLatency = latencies[len(latencies)-1]
 		snapshot.AvgLatency = averageLatency(latencies)
 		snapshot.P95Latency = percentileLatency(latencies, 0.95)
+	}
+	if len(insertLatencies) > 0 {
+		snapshot.AvgInsertLatency = averageLatency(insertLatencies)
+		snapshot.P95InsertLatency = percentileLatency(insertLatencies, 0.95)
 	}
 
 	return snapshot
@@ -162,6 +226,22 @@ func (s Snapshot) SummaryLines() []string {
 		fmt.Sprintf("duration=%s planned_logs=%d sent_logs=%d failed_logs=%d dropped_logs=%d throughput=%.2f logs/s", s.Duration.Round(time.Millisecond), s.PlannedLogs, s.SentLogs, s.FailedLogs, s.DroppedLogs, s.ThroughputLPS),
 		fmt.Sprintf("requests success=%d failed=%d dropped=%d error_rate=%.2f%%", s.SuccessReqs, s.FailedReqs, s.DroppedReqs, s.ErrorRate()*100),
 		fmt.Sprintf("latency min=%s avg=%s p95=%s max=%s", roundDuration(s.MinLatency), roundDuration(s.AvgLatency), roundDuration(s.P95Latency), roundDuration(s.MaxLatency)),
+	}
+
+	if s.ConsumerLagAvailable {
+		lines = append(lines, fmt.Sprintf("consumer_lag=%d messages", s.ConsumerLag))
+	}
+	if s.InsertObservedBatches > 0 || s.InsertTimedOutBatches > 0 || s.InsertObservationError != "" {
+		lines = append(lines, fmt.Sprintf(
+			"batch_insert observed=%d timed_out=%d latency_avg=%s latency_p95=%s",
+			s.InsertObservedBatches,
+			s.InsertTimedOutBatches,
+			roundDuration(s.AvgInsertLatency),
+			roundDuration(s.P95InsertLatency),
+		))
+	}
+	if s.InsertObservationError != "" {
+		lines = append(lines, "batch_insert_observation_error="+s.InsertObservationError)
 	}
 
 	if len(s.StatusCounts) > 0 {

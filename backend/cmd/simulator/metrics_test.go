@@ -98,3 +98,25 @@ func TestMetricsSnapshotCopiesMaps(t *testing.T) {
 		t.Fatalf("StatusCounts mutated through snapshot: %#v", next.StatusCounts)
 	}
 }
+
+func TestMetricsRecordsConsumerLagAndBatchInsertLatency(t *testing.T) {
+	metrics := NewMetrics(time.Now())
+	metrics.SetConsumerLag(42)
+	metrics.RecordBatchInsertLatency(10 * time.Millisecond)
+	metrics.RecordBatchInsertLatency(20 * time.Millisecond)
+	metrics.RecordBatchInsertTimeout(3)
+
+	snapshot := metrics.Snapshot()
+	if !snapshot.ConsumerLagAvailable || snapshot.ConsumerLag != 42 {
+		t.Fatalf("consumer lag snapshot = %+v", snapshot)
+	}
+	if snapshot.InsertObservedBatches != 2 || snapshot.InsertTimedOutBatches != 3 {
+		t.Fatalf("insert batch counts = observed %d timed_out %d", snapshot.InsertObservedBatches, snapshot.InsertTimedOutBatches)
+	}
+	if snapshot.AvgInsertLatency != 15*time.Millisecond {
+		t.Fatalf("AvgInsertLatency = %s, want 15ms", snapshot.AvgInsertLatency)
+	}
+	if snapshot.P95InsertLatency != 10*time.Millisecond {
+		t.Fatalf("P95InsertLatency = %s, want 10ms", snapshot.P95InsertLatency)
+	}
+}

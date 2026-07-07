@@ -14,16 +14,21 @@ type Runner struct {
 	cfg     Config
 	sender  *Sender
 	metrics *Metrics
+	inserts *InsertTracker
 	output  io.Writer
 	runID   string
 }
 
 func NewRunner(cfg Config, output io.Writer) *Runner {
 	start := time.Now()
+	if output == nil {
+		output = io.Discard
+	}
 	return &Runner{
 		cfg:     cfg,
 		sender:  NewSender(cfg),
 		metrics: NewMetrics(start),
+		inserts: NewInsertTracker(),
 		output:  output,
 		runID:   newRunID(),
 	}
@@ -36,6 +41,17 @@ func (r *Runner) Run(ctx context.Context) (RunResult, error) {
 	}
 
 	result.TopicBefore = captureTopicOffsets(context.Background(), r.cfg.KafkaBrokers, r.cfg.KafkaTopic)
+	result.ConsumerLagBefore = captureConsumerLag(context.Background(), r.cfg.KafkaBrokers, r.cfg.KafkaTopic, r.cfg.ConsumerGroup)
+
+	loadDone := make(chan struct{})
+	var observeDone chan error
+	if r.cfg.ReportWait > 0 && r.cfg.Mode != ModeSingle {
+		observeDone = make(chan error, 1)
+		fmt.Fprintf(r.output, "[observe] tracking batch inserts in ClickHouse, settle_timeout=%s\n", r.cfg.ReportWait)
+		go func() {
+			observeDone <- observeBatchInserts(ctx, r.cfg, r.inserts, loadDone, r.metrics)
+		}()
+	}
 
 	jobs := make(chan Job, r.cfg.DispatchBuffer)
 	var producerWG sync.WaitGroup
@@ -48,6 +64,7 @@ func (r *Runner) Run(ctx context.Context) (RunResult, error) {
 			for job := range jobs {
 				result := r.sendWithRetry(ctx, job)
 				r.metrics.Record(result)
+				r.inserts.Track(result, job)
 			}
 		}()
 	}
@@ -75,14 +92,38 @@ func (r *Runner) Run(ctx context.Context) (RunResult, error) {
 	producerWG.Wait()
 	close(jobs)
 	workerWG.Wait()
+	if observeDone != nil {
+		close(loadDone)
+	}
 	stopProgress()
 	<-reportDone
 
 	r.metrics.Finish(time.Now())
 	result.FinishedAt = time.Now().UTC()
-	result.Snapshot = r.metrics.Snapshot()
+
+	if r.cfg.ReportWait > 0 {
+		if observeDone != nil {
+			if err := <-observeDone; err != nil {
+				r.metrics.RecordInsertObservationError(err)
+			}
+			if r.inserts.Count() == 0 {
+				fmt.Fprintf(r.output, "[observe] waiting %s for queue-to-DB settle\n", r.cfg.ReportWait)
+				waitForSettle(ctx, r.cfg.ReportWait)
+			}
+		} else {
+			fmt.Fprintf(r.output, "[observe] waiting %s for queue-to-DB settle\n", r.cfg.ReportWait)
+			waitForSettle(ctx, r.cfg.ReportWait)
+		}
+		result.Settled = true
+	}
+
 	result.TopicAfter = captureTopicOffsets(context.Background(), r.cfg.KafkaBrokers, r.cfg.KafkaTopic)
 	result.TopicDelta = result.TopicAfter.Total - result.TopicBefore.Total
+	result.ConsumerLagAfter = captureConsumerLag(context.Background(), r.cfg.KafkaBrokers, r.cfg.KafkaTopic, r.cfg.ConsumerGroup)
+	if result.ConsumerLagAfter.CaptureError == nil {
+		r.metrics.SetConsumerLag(result.ConsumerLagAfter.TotalLag)
+	}
+	result.Snapshot = r.metrics.Snapshot()
 
 	if result.Snapshot.FailedReqs > 0 {
 		result.BenchmarkErr = fmt.Errorf("benchmark completed with %d failed requests", result.Snapshot.FailedReqs)
@@ -300,6 +341,15 @@ func submitJob(ctx context.Context, jobs chan<- Job, job Job) bool {
 		return false
 	case jobs <- job:
 		return true
+	}
+}
+
+func waitForSettle(ctx context.Context, duration time.Duration) {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+	case <-timer.C:
 	}
 }
 

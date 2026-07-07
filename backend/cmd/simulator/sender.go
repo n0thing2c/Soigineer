@@ -27,6 +27,7 @@ type Result struct {
 	Logs       int
 	StatusCode int
 	Latency    time.Duration
+	StartedAt  time.Time
 	Err        error
 }
 
@@ -71,19 +72,19 @@ func (s *Sender) Send(ctx context.Context, job Job) Result {
 		body, err = marshalBatchLogs(job.Logs)
 	}
 	if err != nil {
-		return Result{Kind: job.Kind, Logs: len(job.Logs), Err: err}
+		return Result{Kind: job.Kind, Logs: len(job.Logs), StartedAt: start, Err: err}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return Result{Kind: job.Kind, Logs: len(job.Logs), Err: err}
+		return Result{Kind: job.Kind, Logs: len(job.Logs), StartedAt: start, Err: err}
 	}
 	req.Header = s.requestHeader.Clone()
 
 	resp, err := s.client.Do(req)
 	latency := time.Since(start)
 	if err != nil {
-		return Result{Kind: job.Kind, Logs: len(job.Logs), Latency: latency, Err: err}
+		return Result{Kind: job.Kind, Logs: len(job.Logs), Latency: latency, StartedAt: start, Err: err}
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
@@ -94,6 +95,7 @@ func (s *Sender) Send(ctx context.Context, job Job) Result {
 			Logs:       len(job.Logs),
 			StatusCode: resp.StatusCode,
 			Latency:    latency,
+			StartedAt:  start,
 			Err:        fmt.Errorf("unexpected status code %d", resp.StatusCode),
 		}
 	}
@@ -103,6 +105,7 @@ func (s *Sender) Send(ctx context.Context, job Job) Result {
 		Logs:       len(job.Logs),
 		StatusCode: resp.StatusCode,
 		Latency:    latency,
+		StartedAt:  start,
 	}
 }
 

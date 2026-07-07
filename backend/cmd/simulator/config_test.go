@@ -108,6 +108,7 @@ func TestConfigValidateRejectsInvalidValues(t *testing.T) {
 		ReportWait:    0,
 		KafkaBrokers:  []string{"localhost:19092"},
 		KafkaTopic:    "raw-logs",
+		ConsumerGroup: "process-raw-log",
 	}
 
 	tests := []struct {
@@ -131,6 +132,7 @@ func TestConfigValidateRejectsInvalidValues(t *testing.T) {
 		{"report wait", func(c *Config) { c.ReportWait = -1 }, "report-wait must be greater than or equal to 0"},
 		{"brokers", func(c *Config) { c.KafkaBrokers = nil }, "kafka-brokers must contain at least one broker"},
 		{"topic", func(c *Config) { c.KafkaTopic = " " }, "kafka-topic must not be empty"},
+		{"consumer group", func(c *Config) { c.ConsumerGroup = " " }, "consumer-group must not be empty"},
 		{"base url", func(c *Config) { c.BaseURL = "://bad" }, "base-url must be a valid URL"},
 	}
 
